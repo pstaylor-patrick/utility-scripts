@@ -15,6 +15,8 @@ git checkout -b develop
 git push -uf origin develop
 git checkout $current_branch_name
 
-echo "https://websystems.ramseysolutions.net/go/tab/pipeline/history/${repo_name}_develop"
+head_commit_sha=$(git rev-parse head)
+develop_pipeline_url="https://websystems.ramseysolutions.net/go/tab/pipeline/history/${repo_name}_develop"
 
+echo "deploying ${head_commit_sha} to env-test at ${develop_pipeline_url}"
 echo "************ end devpush ************"
