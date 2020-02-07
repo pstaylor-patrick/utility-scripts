@@ -7,11 +7,14 @@
 
 echo "************ begin devpush ************"
 
+repo_name=$(basename `git rev-parse --show-toplevel`)
 current_branch_name=$(git rev-parse --abbrev-ref HEAD)
 
 git branch -D develop
 git checkout -b develop
 git push -uf origin develop
 git checkout $current_branch_name
+
+echo "https://websystems.ramseysolutions.net/go/tab/pipeline/history/${repo_name}_develop"
 
 echo "************ end devpush ************"
