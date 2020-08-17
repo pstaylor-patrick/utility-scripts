@@ -26,6 +26,9 @@ do
   git branch -D $branch
 done
 
+rm -rf ./**
+git reset --hard
+
 git checkout master
 git pull
 git branch -D $temp_branch
