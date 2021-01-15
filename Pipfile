@@ -1,0 +1,15 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+boto3 = "*"
+
+[packages]
+
+[scripts]
+delete-all-items-from-dynamodb="python3 ./python-scripts/delete-all-items-from-dynamodb.py"
+
+[requires]
+python_version = "3.8"
