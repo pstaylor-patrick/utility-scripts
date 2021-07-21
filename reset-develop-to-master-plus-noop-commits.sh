@@ -18,7 +18,7 @@ git checkout master
 git checkout -b develop
 touch $temp_file
 git add $temp_file
-git commit -m "noop: add $temp_file"
+git commit -m "noop: add $temp_file" -n
 git revert $(git rev-parse HEAD) --no-edit
 git push -uf origin develop
 git branch -D $temp_branch
