@@ -31,6 +31,7 @@ git reset --hard
 
 git checkout master
 git pull
+git fetch
 git branch -D $temp_branch
 
 echo "************ end prunelocal ************"
