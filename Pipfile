@@ -5,11 +5,13 @@ verify_ssl = true
 
 [dev-packages]
 boto3 = "*"
+black = "==19.3b0"
 
 [packages]
 
 [scripts]
 delete-all-items-from-dynamodb="python3 ./python-scripts/delete-all-items-from-dynamodb.py"
+generate-contact-whitelist="python3 ./python-scripts/generate-contact-whitelist.py"
 
 [requires]
 python_version = "3.8"

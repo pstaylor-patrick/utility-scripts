@@ -1,0 +1,17 @@
+{
+  "name": "utility-scripts",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@github.com:pstaylor-patrick/utility-scripts.git",
+  "author": "pstaylor-patrick <1963845+pstaylor-patrick@users.noreply.github.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "onchange": "^7.1.0",
+    "prettier": "^2.5.1"
+  },
+  "scripts": {
+    "postinstall": "pipenv install --dev",
+    "format": "pipenv run black .",
+    "watch-py": "onchange **/*.py -- pipenv run black {{changed}}"
+  }
+}
