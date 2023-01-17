@@ -29,7 +29,7 @@ done
 rm -rf ./**
 git reset --hard
 
-git checkout master
+git checkout main
 git pull
 git fetch
 git branch -D $temp_branch
