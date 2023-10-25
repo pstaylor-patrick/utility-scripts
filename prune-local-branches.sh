@@ -33,6 +33,9 @@ git checkout main
 git pull
 git fetch
 git branch -D $temp_branch
+
+/usr/bin/env bash "$(dirname $(git rev-parse --show-toplevel 2>/dev/null))/reset.sh"
+
 git branch --list --all
 
 echo "************ end prunelocal ************"
