@@ -33,6 +33,7 @@ git checkout main
 git pull
 git fetch
 git branch -D $temp_branch
+git branch --list --all
 
 # region - refresh env files
 declare -a envs=()
