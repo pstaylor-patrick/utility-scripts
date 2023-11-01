@@ -34,7 +34,7 @@ git pull
 git fetch
 git branch -D $temp_branch
 
-/usr/bin/env bash "$(dirname $(git rev-parse --show-toplevel 2>/dev/null))/reset.sh"
+/usr/bin/env bash "$(dirname $(git rev-parse --show-toplevel 2>/dev/null))/$(basename $(git rev-parse --show-toplevel)).reset.sh"
 
 git branch --list --all
 
