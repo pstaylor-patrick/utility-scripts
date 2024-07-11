@@ -9,5 +9,12 @@ suffix=$(echo $uuid | awk -F'-' '{print tolower($NF)}')
 # Construct the email address
 email="ptaylor+${suffix}@gloo.us"
 
-# Output the email address
-echo $email
+# Copy the email address to the clipboard using pbcopy without trailing newline
+echo -n "$email" | pbcopy
+
+if [ $? -eq 0 ]; then
+    echo $email
+else
+    echo "$email (failed to copy text to the clipboard)"
+    exit 1
+fi
