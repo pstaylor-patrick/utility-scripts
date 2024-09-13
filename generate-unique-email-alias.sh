@@ -1,20 +1,29 @@
 #!/usr/bin/env bash
 
-# Generate a UUID
-uuid=$(uuidgen)
+# Check if an email address was provided as an argument
+if [ -z "$1" ]; then
+    echo "Usage: $0 <email>"
+    exit 1
+fi
 
-# Extract the last alphanumeric chunk after the last `-`
+# Extract the username and domain from the provided email address
+email="$1"
+username=$(echo "$email" | cut -d '@' -f 1)
+domain=$(echo "$email" | cut -d '@' -f 2)
+
+# Generate a UUID and extract the last alphanumeric chunk after the last `-`
+uuid=$(uuidgen)
 suffix=$(echo $uuid | awk -F'-' '{print tolower($NF)}')
 
-# Construct the email address
-email="ptaylor+${suffix}@gloo.us"
+# Construct the new email alias using the username and domain from the input email
+new_email="${username}+${suffix}@${domain}"
 
-# Copy the email address to the clipboard using pbcopy without trailing newline
-echo -n "$email" | pbcopy
+# Copy the new email alias to the clipboard using pbcopy without trailing newline
+echo -n "$new_email" | pbcopy
 
 if [ $? -eq 0 ]; then
-    echo $email
+    echo $new_email
 else
-    echo "$email (failed to copy text to the clipboard)"
+    echo "$new_email (failed to copy text to the clipboard)"
     exit 1
 fi
