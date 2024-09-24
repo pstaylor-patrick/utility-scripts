@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 
-# Get the short SHA of the current git HEAD
-SHA=$(git rev-parse --short=7 HEAD)
+# Default to the HEAD commit if no argument is provided, otherwise use the argument as the offset
+OFFSET=${1:-0}
 
-# Output it to the terminal
+# Get the short SHA of the commit at the given offset before HEAD
+SHA=$(git rev-parse --short=7 HEAD~$OFFSET)
+
+# Output the SHA to the terminal
 echo $SHA
 
 # Copy it to the clipboard
