@@ -1,29 +1,33 @@
 #!/usr/bin/env bash
 
-# Function to generate a UUID fragment if not provided
+# Function to generate a UUID fragment for the fake org name
 generate_uuid_fragment() {
   uuidgen | awk -F '-' '{print $NF}'
 }
 
-# Check if a UUID fragment is provided as a command line argument
-if [ -z "$1" ]; then
-  UUID_FRAGMENT=$(generate_uuid_fragment)
-else
-  UUID_FRAGMENT="$1"
-fi
+# Function to generate a universally unique 8-digit EIN/SSN without any zeros, followed by a 3
+generate_random_ein() {
+  # Use a UUID for uniqueness
+  local uuid_fragment=$(uuidgen | tr -d '-' | tr -cd '1-9')  # Ensure only 1-9 digits, no zeros
 
-# Extract numbers from the UUID fragment
-NUMERICAL_STRING=$(echo "$UUID_FRAGMENT" | tr -cd '0-9')
+  # Ensure we have at least 8 characters from the UUID, append random digits if needed
+  while [ ${#uuid_fragment} -lt 8 ]; do
+    uuid_fragment+=$(( RANDOM % 9 + 1 ))  # Generate random digits from 1-9
+  done
 
-# Truncate the string from the leading characters if it exceeds 9 characters
-if [ ${#NUMERICAL_STRING} -gt 9 ]; then
-  NUMERICAL_STRING=${NUMERICAL_STRING: -9}
-fi
+  # Take the first 8 digits and append a 3 at the end
+  local ein="${uuid_fragment:0:8}3"
+  
+  echo "$ein"
+}
 
-# Add leading zeros to make the total length 9
-FAKE_EIN=$(printf "%09d" "$NUMERICAL_STRING")
+# Generate the fake org name using a UUID fragment
+ORG_NAME="$(generate_uuid_fragment)"
 
-# Copy the resulting string to clipboard and echo it back to the console
-echo "$FAKE_EIN" | pbcopy
-echo "UUID Fragment: $UUID_FRAGMENT"
+# Generate the fake EIN
+FAKE_EIN=$(generate_random_ein)
+
+# Copy the resulting org name and EIN to the clipboard and echo them back to the console
+echo "DO $ORG_NAME $FAKE_EIN" | pbcopy
+echo "Fake Organization Name: $ORG_NAME"
 echo "Fake EIN: $FAKE_EIN"
