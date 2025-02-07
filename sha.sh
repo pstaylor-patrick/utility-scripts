@@ -12,5 +12,5 @@ COMMIT_MSG=$(git log --oneline -n 1 HEAD~$OFFSET)
 # Output the SHA and the commit message to the terminal
 echo "$COMMIT_MSG"
 
-# Copy only the SHA to the clipboard
-echo $SHA | pbcopy
+# Copy only the SHA to the clipboard, removing any trailing newline
+echo -n $SHA | pbcopy
