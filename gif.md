@@ -1,4 +1,5 @@
-🎨 "New" Tool for GIFs https://github.com/pstaylor-patrick/utility-scripts/blob/master/gif.sh
+# 🎨 "New" Tool for GIFs 
+https://github.com/pstaylor-patrick/utility-scripts/blob/master/gif.sh
 
 Got GIFs? Sure, you could search GIPHY. But what about making your own?
 
