@@ -28,6 +28,6 @@ ORG_NAME="$(generate_uuid_fragment)"
 FAKE_EIN=$(generate_random_ein)
 
 # Copy the resulting org name and EIN to the clipboard and echo them back to the console
-echo "$ORG_NAME $FAKE_EIN" | pbcopy
+echo -n "$ORG_NAME $FAKE_EIN" | pbcopy
 echo "Fake Organization Name: $ORG_NAME"
 echo "Fake EIN: $FAKE_EIN"
