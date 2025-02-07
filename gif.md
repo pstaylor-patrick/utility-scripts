@@ -18,6 +18,6 @@ And then used the GIF script to encode it into these three GIFs:
 
 | Resolution | Size  | Preview |
 |------------|-------|---------|
-| Low        | 97 KB | ![Low Resolution GIF](./gif/12c8488 low.gif) |
-| Mid        | 266 KB| ![Mid Resolution GIF](./gif/12c8488 mid.gif) |
-| High       | 445 KB| ![High Resolution GIF](./gif/12c8488 high.gif) |
+| Low        | 97 KB | ![Low Resolution GIF](./gif/12c8488%20low.gif) |
+| Mid        | 266 KB| ![Mid Resolution GIF](./gif/12c8488%20mid.gif) |
+| High       | 445 KB| ![High Resolution GIF](./gif/12c8488%20high.gif) |
