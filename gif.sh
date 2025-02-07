@@ -57,12 +57,12 @@ output_file="$output_dir/$output_base.gif"
 # Process based on resolution
 case "$resolution" in
     low)
-        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos" -c:v gif "$output_file"
+        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos" -c:v gif "${output_dir}/${output_base} low.gif"
         ;;
     mid)
-        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" "$output_file"
+        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" "${output_dir}/${output_base} mid.gif"
         ;;
     high)
-        ffmpeg -y -i "$input_file" -vf "fps=15,scale=800:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" "${output_dir}/${output_base}_max.gif"
+        ffmpeg -y -i "$input_file" -vf "fps=15,scale=800:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" "${output_dir}/${output_base} high.gif"
         ;;
 esac
