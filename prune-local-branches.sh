@@ -7,6 +7,9 @@
 
 echo "************ begin prunelocal ************"
 
+# Check if a branch name is provided as an argument
+desired_branch="$1"
+
 current_branch=$(git rev-parse --abbrev-ref HEAD)
 temp_branch=$(uuidgen)
 
@@ -34,7 +37,12 @@ git pull
 git fetch
 git branch -D $temp_branch
 
-/usr/bin/env bash "$(dirname $(git rev-parse --show-toplevel 2>/dev/null))/$(basename $(git rev-parse --show-toplevel)).reset.sh"
+# Conditionally pass the branch name to the reset script
+if [ -n "$desired_branch" ]; then
+    /usr/bin/env bash "$(dirname $(git rev-parse --show-toplevel 2>/dev/null))/$(basename $(git rev-parse --show-toplevel)).reset.sh" "$desired_branch"
+else
+    /usr/bin/env bash "$(dirname $(git rev-parse --show-toplevel 2>/dev/null))/$(basename $(git rev-parse --show-toplevel)).reset.sh"
+fi
 
 git branch --list --all
 
