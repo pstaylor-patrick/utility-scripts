@@ -49,20 +49,24 @@ fi
 
 # Extract the directory and base name from the input file
 output_dir=$(dirname "$input_file")
-output_base=$(basename "$input_file" .mp4)
+output_base=$(basename "$input_file" | sed 's/\.[^.]*$//')
 
 # Construct the output file path
-output_file="$output_dir/$output_base.gif"
+if [ "$resolution" = "high" ] && [ -z "$2" ]; then
+    output_file="$output_dir/$output_base.gif"
+else
+    output_file="$output_dir/$output_base $resolution.gif"
+fi
 
 # Process based on resolution
 case "$resolution" in
     low)
-        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos" -c:v gif "${output_dir}/${output_base} low.gif"
+        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos" -c:v gif "$output_file"
         ;;
     mid)
-        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" "${output_dir}/${output_base} mid.gif"
+        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" "$output_file"
         ;;
     high)
-        ffmpeg -y -i "$input_file" -vf "fps=15,scale=800:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" "${output_dir}/${output_base} high.gif"
+        ffmpeg -y -i "$input_file" -vf "fps=15,scale=800:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" "$output_file"
         ;;
 esac
