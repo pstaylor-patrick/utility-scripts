@@ -41,6 +41,7 @@ nuke_it() {
   current_branch=$(git rev-parse --abbrev-ref HEAD)
   temp_branch=$(uuidgen)
 
+  git rebase --abort || true
   git reset --hard
   git clean -xdf
   git checkout -b $temp_branch
