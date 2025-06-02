@@ -5,13 +5,16 @@
   "repository": "git@github.com:pstaylor-patrick/utility-scripts.git",
   "author": "pstaylor-patrick <1963845+pstaylor-patrick@users.noreply.github.com>",
   "license": "MIT",
+  "type": "module",
   "devDependencies": {
+    "fs": "^0.0.1-security",
     "onchange": "^7.1.0",
-    "prettier": "^2.5.1"
+    "prettier": "^2.5.1",
+    "yarn": "^1.22.22"
   },
   "scripts": {
-    "postinstall": "pipenv install --dev",
     "format": "pipenv run black .",
-    "watch-py": "onchange **/*.py -- pipenv run black {{changed}}"
+    "watch-py": "onchange **/*.py -- pipenv run black {{changed}}",
+    "stringify": "node stringify.js"
   }
 }
