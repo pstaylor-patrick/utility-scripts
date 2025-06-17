@@ -52,9 +52,6 @@ main() {
   log "🗂️  checking out desired branch"
   checkout_desired_branch
 
-  log "🔄 setting up nvm"
-  setup_nvm
-
   log "⚙️  running custom repo reset script"
   custom_reset
 
@@ -115,12 +112,6 @@ checkout_desired_branch() {
   else
     log "No branch specified, staying on the current branch"
   fi
-}
-
-setup_nvm() {
-  export NVM_DIR="$HOME/.nvm"
-  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"                   # This loads nvm
-  [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion" # This loads nvm bash_completion
 }
 
 custom_reset() {
