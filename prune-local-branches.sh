@@ -7,16 +7,53 @@
 
 # Check if a branch name is provided as an argument
 desired_branch="$1"
-default_branch="main"
+
+detect_default_branch() {
+  local has_master=false
+  local has_main=false
+
+  # Check for master branch
+  if git show-ref --verify --quiet "refs/heads/master" || git show-ref --verify --quiet "refs/remotes/origin/master"; then
+    has_master=true
+  fi
+
+  # Check for main branch
+  if git show-ref --verify --quiet "refs/heads/main" || git show-ref --verify --quiet "refs/remotes/origin/main"; then
+    has_main=true
+  fi
+
+  # Handle error cases
+  if [ "$has_master" = true ] && [ "$has_main" = true ]; then
+    echo "Error: Repository has both 'master' and 'main' branches. Please resolve this ambiguity manually."
+    exit 1
+  elif [ "$has_master" = false ] && [ "$has_main" = false ]; then
+    echo "Error: Repository has neither 'master' nor 'main' branch. Please ensure a default branch exists."
+    exit 1
+  fi
+
+  # Return the appropriate default branch
+  if [ "$has_master" = true ]; then
+    echo "master"
+  else
+    echo "main"
+  fi
+}
 
 main() {
   echo "************ begin prunelocal ************"
+
+  log "🔍 detecting default branch"
+  default_branch=$(detect_default_branch)
+  log "Using default branch: $default_branch"
 
   log "💣 nuking it"
   nuke_it
 
   log "🗂️  checking out desired branch"
   checkout_desired_branch
+
+  log "🔄 setting up nvm"
+  setup_nvm
 
   log "⚙️  running custom repo reset script"
   custom_reset
@@ -78,6 +115,12 @@ checkout_desired_branch() {
   else
     log "No branch specified, staying on the current branch"
   fi
+}
+
+setup_nvm() {
+  export NVM_DIR="$HOME/.nvm"
+  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"                   # This loads nvm
+  [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion" # This loads nvm bash_completion
 }
 
 custom_reset() {
