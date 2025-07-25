@@ -55,6 +55,9 @@ main() {
   log "🔥 killing docker"
   kill_docker
 
+  log "🔥 setting up nvm"
+  setup_nvm
+
   log "⚙️  running custom repo reset script"
   custom_reset
 
@@ -118,39 +121,48 @@ checkout_desired_branch() {
 }
 
 kill_docker() {
-    log "destroying all docker resources"
+  log "destroying all docker resources"
 
-    # Stop and remove all running containers
-    if [ "$(docker ps -aq)" ]; then
+  # Stop and remove all running containers
+  if [ "$(docker ps -aq)" ]; then
     if [ "$(docker ps -q)" ]; then
-        docker stop $(docker ps -q)
+      docker stop $(docker ps -q)
     fi
     docker rm $(docker ps -a -q)
-    else
+  else
     echo "No running containers to stop or remove."
-    fi
+  fi
 
-    # Remove all images
-    if [ "$(docker images -q)" ]; then
+  # Remove all images
+  if [ "$(docker images -q)" ]; then
     docker rmi $(docker images -q)
-    else
+  else
     echo "No images to remove."
-    fi
+  fi
 
-    # Remove all volumes
-    if [ "$(docker volume ls -q)" ]; then
+  # Remove all volumes
+  if [ "$(docker volume ls -q)" ]; then
     docker volume rm $(docker volume ls -q)
-    else
+  else
     echo "No volumes to remove."
-    fi
+  fi
 
-    # Remove all networks except the default ones
-    networks_to_remove=$(docker network ls -q | grep -vE 'bridge|host|none')
-    if [ "$networks_to_remove" ]; then
+  # Remove all networks except the default ones
+  networks_to_remove=$(docker network ls -q | grep -vE 'bridge|host|none')
+  if [ "$networks_to_remove" ]; then
     docker network rm $networks_to_remove 2>/dev/null || true
-    else
+  else
     echo "No custom networks to remove."
-    fi
+  fi
+}
+
+setup_nvm() {
+  export NVM_DIR="$HOME/.nvm"
+  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"                   # This loads nvm
+  [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion" # This loads nvm bash_completion
+  nvm install "lts/*"
+  nvm use
+  npm i -g pnpm@latest
 }
 
 custom_reset() {
