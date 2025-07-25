@@ -10,5 +10,5 @@ get_uuid_tail() {
 UUID_TAIL=$(get_uuid_tail)
 
 # Echo the result to stdout and copy it to clipboard without a newline
-echo "UUID Tail: $UUID_TAIL"
+echo "$UUID_TAIL"
 echo -n "$UUID_TAIL" | pbcopy
