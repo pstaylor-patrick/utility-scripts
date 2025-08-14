@@ -99,7 +99,7 @@ nuke_it() {
   rm -rf ./**
   git reset --hard
 
-  git checkout $default_branch
+  git checkout --track origin/$default_branch
   git pull
   git fetch
   git branch -D $temp_branch
