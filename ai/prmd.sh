@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
 
-PULL_REQUEST_TEMPLATE="$HOME/src/pstaylor-patrick/utility-scripts/ai/prmd/pull_request_template.md"
+DEFAULT_PULL_REQUEST_TEMPLATE="$HOME/src/pstaylor-patrick/utility-scripts/ai/prmd/pull_request_template.md"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+get_template_path() {
+    # Check if there's a .github/pull_request_template.md in the current directory
+    local github_template="./.github/pull_request_template.md"
+    if [ -f "$github_template" ]; then
+        echo "$github_template"
+    else
+        echo "$DEFAULT_PULL_REQUEST_TEMPLATE"
+    fi
 }
 
 main() {
@@ -15,7 +25,15 @@ main() {
 
     local base_branch="$1"
     log "Starting PR description generation against $base_branch..."
-    cp "$PULL_REQUEST_TEMPLATE" ./pr.md
+    
+    # Determine which template to use
+    local template_path=$(get_template_path)
+    if [ "$template_path" = "./.github/pull_request_template.md" ]; then
+        log "Using local .github/pull_request_template.md"
+    else
+        log "Using default pull request template"
+    fi
+    cp "$template_path" ./pr.md
 
     # Get a statistical summary of the diff against the base branch
     log "Generating diff summary against '$base_branch' from directory: $(pwd)"
