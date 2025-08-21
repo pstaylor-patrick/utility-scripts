@@ -115,5 +115,14 @@ generate_pr_md() {
 # Wrap main execution to ensure cleanup
 {
     main "$@"
+    
+    # Open the generated PR description in VS Code
+    log "Opening PR description in VS Code..."
+    code ./pr.md
+    
+    # Copy the PR description to clipboard
+    log "Copying PR description to clipboard..."
+    cat ./pr.md | pbcopy
+    
     log "PR description generation complete"
 }
