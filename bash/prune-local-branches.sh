@@ -11,6 +11,8 @@ desired_branch="$1"
 detect_default_branch() {
   local has_master=false
   local has_main=false
+  local has_dev=false
+  local has_develop=false
 
   # Check for master branch
   if git show-ref --verify --quiet "refs/heads/master" || git show-ref --verify --quiet "refs/remotes/origin/master"; then
@@ -22,20 +24,34 @@ detect_default_branch() {
     has_main=true
   fi
 
+  # Check for dev branch (tertiary option)
+  if git show-ref --verify --quiet "refs/heads/dev" || git show-ref --verify --quiet "refs/remotes/origin/dev"; then
+    has_dev=true
+  fi
+
+  # Check for develop branch (quaternary option)
+  if git show-ref --verify --quiet "refs/heads/develop" || git show-ref --verify --quiet "refs/remotes/origin/develop"; then
+    has_develop=true
+  fi
+
   # Handle error cases
   if [ "$has_master" = true ] && [ "$has_main" = true ]; then
     echo "Error: Repository has both 'master' and 'main' branches. Please resolve this ambiguity manually."
     exit 1
-  elif [ "$has_master" = false ] && [ "$has_main" = false ]; then
-    echo "Error: Repository has neither 'master' nor 'main' branch. Please ensure a default branch exists."
+  elif [ "$has_master" = false ] && [ "$has_main" = false ] && [ "$has_dev" = false ] && [ "$has_develop" = false ]; then
+    echo "Error: Repository has neither 'master', 'main', 'dev', nor 'develop' branch. Please ensure a default branch exists."
     exit 1
   fi
 
-  # Return the appropriate default branch
+  # Return the appropriate default branch (priority: master > main > dev > develop)
   if [ "$has_master" = true ]; then
     echo "master"
-  else
+  elif [ "$has_main" = true ]; then
     echo "main"
+  elif [ "$has_dev" = true ]; then
+    echo "dev"
+  else
+    echo "develop"
   fi
 }
 
@@ -53,7 +69,7 @@ main() {
   checkout_desired_branch
 
   log "🔥 killing docker"
-  kill_docker
+  # kill_docker
 
   log "🔥 setting up nvm"
   setup_nvm
