@@ -811,13 +811,12 @@ main() {
 {
     main "$@"
     
-    # Open the generated PR description in VS Code
-    log "Opening PR description in VS Code..."
-    code ./pr.md
-    
     # Copy the PR description to clipboard
     log "Copying PR description to clipboard..."
-    cat ./pr.md | pbcopy
+    pbcopy < ./pr.md
+    
+    # Print the PR description to stdout
+    cat ./pr.md
     
     log "PR description generation complete"
 }
