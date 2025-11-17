@@ -676,50 +676,88 @@ generate_pr_md() {
     
     # Check if we need to chunk the full diff
     if [ $diff_size -gt $MAX_CHUNK_SIZE ]; then
-        log "Full diff exceeds maximum chunk size ($MAX_CHUNK_SIZE chars), chunking required"
-        
-        # Chunk the diff
-        local chunk_result=$(chunk_diff "$full_diff_content" "$MAX_CHUNK_SIZE" "$OVERLAP_SIZE")
-        local temp_dir=$(echo "$chunk_result" | cut -d: -f1)
-        local total_chunks=$(echo "$chunk_result" | cut -d: -f2)
-        
-        log "Created $total_chunks chunks in $temp_dir"
-        
-        # Check if parallel processing is enabled and we have multiple chunks
-        if [ "$ENABLE_PARALLEL" = "true" ] && [ $total_chunks -gt 1 ]; then
-            log "Using parallel processing for $total_chunks chunks"
-            process_chunks_parallel "$temp_dir" "$total_chunks"
-        else
-            # Fall back to sequential processing
-            log "Using sequential processing for $total_chunks chunks"
-            
-            # Check if we can process all chunks in a single pass for maximum speed
-            if [ $total_chunks -le $BATCH_SIZE ]; then
-                log "Processing all $total_chunks chunks in a single API call for maximum speed"
-                extend_pr_md_batch "$temp_dir" "0" "$((total_chunks - 1))" "$total_chunks"
-            else
-                # Process chunks in batches to reduce API calls
-                log "Processing chunks in batches of $BATCH_SIZE to optimize speed"
-                
-                for ((i=0; i<total_chunks; i+=BATCH_SIZE)); do
-                    local end_chunk=$((i + BATCH_SIZE - 1))
-                    if [ $end_chunk -ge $total_chunks ]; then
-                        end_chunk=$((total_chunks - 1))
-                    fi
-                    
-                    log "Processing batch: chunks $((i+1))-$((end_chunk+1)) of $total_chunks..."
-                    extend_pr_md_batch "$temp_dir" "$i" "$end_chunk" "$total_chunks"
-                done
-            fi
-        fi
-        
-        # Cleanup temporary directory
-        rm -rf "$temp_dir"
-        log "Completed processing all $total_chunks full diff chunks"
-        
+        log "Full diff exceeds maximum chunk size ($MAX_CHUNK_SIZE chars), falling back to --stat summary only"
+        log "Skipping full diff extension to avoid chunking per configuration"
+        return
+    fi
+    
+    log "Full diff size is within limits, processing as single extension"
+    extend_pr_md "$full_diff_content" "1" "1"
+}
+
+refine_pr_md_with_git_log() {
+    local base_branch="$1"
+    
+    log "Running secondary refinement using git log against $base_branch"
+    
+    local git_log_output
+    if ! git_log_output=$(git --no-pager log "$base_branch"..HEAD); then
+        log "Failed to retrieve git log for $base_branch..HEAD, skipping refinement step"
+        return
+    fi
+    
+    if [ -z "$git_log_output" ]; then
+        log "No commits found between $base_branch and current HEAD, skipping refinement step"
+        return
+    fi
+    
+    # Get the directory where the script is located to reliably find the project root
+    SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+    PROJECT_ROOT="$SCRIPT_DIR/.."
+
+    # Load API key from .env file in the project root
+    if [ -f "$PROJECT_ROOT/.env" ]; then
+        source "$PROJECT_ROOT/.env"
+    fi
+    
+    local refined="false"
+    
+    if [ -z "$DEEPSEEK_API_KEY" ]; then
+        log "DEEPSEEK_API_KEY not set, skipping API refinement step"
     else
-        log "Full diff size is within limits, processing as single extension"
-        extend_pr_md "$full_diff_content" "1" "1"
+        local pr_content=$(cat ./pr.md)
+        local system_prompt="You are a senior software engineer refining a pull request description. Your task is to adjust the existing PR description so it better reflects the commits listed in the git log. Adhere strictly to the following rules:\n1. Use the provided CURRENT PR DESCRIPTION as the base and refine it without changing the overall template structure.\n2. Ensure the TL;DR, Details, and How to Test sections align with the commit messages and scope described in the git log.\n3. Preserve all existing markdown structure, HTML comments, and asset links.\n4. Keep the tone concise and professional.\n5. Only make adjustments that are justified by the git log content."
+        
+        local user_content="Here is the CURRENT PR DESCRIPTION:\n---\n$pr_content\n---\n\nHere is the GIT LOG for $base_branch..HEAD:\n\`\`\`text\n$git_log_output\n\`\`\`\n\nRefine the PR description so it better reflects the changes described in this git log while preserving the existing structure."
+
+        payload=$(jq -n \
+            --arg system_prompt "$system_prompt" \
+            --arg user_content "$user_content" \
+            '{
+                "model": "deepseek-chat",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": $system_prompt
+                    },
+                    {
+                        "role": "user",
+                        "content": $user_content
+                    }
+                ],
+                "temperature": 0.5
+            }')
+
+        response=$(curl -s -X POST "https://api.deepseek.com/chat/completions" \
+            -H "Authorization: Bearer $DEEPSEEK_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$payload")
+
+        if [[ $? -ne 0 ]]; then
+            log "Error: Failed to call DeepSeek API for refinement step"
+        elif ! jq -e '.choices[0].message.content' <<<"$response" > /dev/null; then
+            log "Error: API response did not contain expected content during refinement"
+            log "API Response: $response"
+        else
+            local refined_content=$(jq -r '.choices[0].message.content' <<<"$response" | sed '/^---$/d')
+            echo "$refined_content" > ./pr.md
+            refined="true"
+            log "Refinement step complete"
+        fi
+    fi
+    
+    if [ "$refined" != "true" ]; then
+        log "Refinement step skipped or failed; keeping existing PR description content"
     fi
 }
 
@@ -761,8 +799,12 @@ main() {
         generate_pr_md "$base_branch" "$use_stat"
     else
         # Try fast mode first, fall back to standard approach if it fails
-        generate_pr_md_fast "$base_branch" || generate_pr_md "$base_branch" "false"
+        if ! generate_pr_md_fast "$base_branch"; then
+            generate_pr_md "$base_branch" "false"
+        fi
     fi
+    
+    refine_pr_md_with_git_log "$base_branch"
 }
 
 # Wrap main execution to ensure cleanup
