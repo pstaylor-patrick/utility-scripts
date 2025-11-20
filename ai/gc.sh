@@ -99,6 +99,74 @@ collect_status_entries() {
     git status --porcelain=v1 --untracked-files=all
 }
 
+can_prettier_format() {
+    local path="$1"
+    local filename="${path##*/}"
+
+    [ -d "$path" ] && return 1
+
+    local ext="${filename##*.}"
+    if [ "$filename" = "$ext" ]; then
+        return 1
+    fi
+
+    case "$ext" in
+        js|jsx|ts|tsx|mjs|cjs|cts|mts|json|jsonc|css|scss|sass|less|md|mdx|markdown|yml|yaml|html|htm|graphql|gql|vue|svelte)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+format_entries_with_prettier() {
+    local entry
+    while IFS= read -r entry; do
+        [ -z "$entry" ] && continue
+        run_prettier_for_entry "$entry"
+    done
+}
+
+run_prettier_for_entry() {
+    local entry="$1"
+    local raw_path="${entry:3}"
+    local paths=()
+
+    if [[ "$raw_path" == *" -> "* ]]; then
+        local old_path="${raw_path%% -> *}"
+        local new_path="${raw_path##* -> }"
+        paths=("$new_path" "$old_path")
+    else
+        paths=("$raw_path")
+    fi
+
+    local found_existing=0
+    local formatted=0
+    for path in "${paths[@]}"; do
+        if [ -e "$path" ] || [ -L "$path" ]; then
+            found_existing=1
+            if ! can_prettier_format "$path"; then
+                log "Skipping Prettier for $path (unsupported type)"
+                continue
+            fi
+            formatted=1
+            log "Formatting $path with Prettier"
+            if ! npx prettier --write -- "$path"; then
+                log "Prettier failed for $path; continuing without aborting."
+            fi
+        fi
+    done
+
+    if [ "$formatted" -eq 0 ] && [ "$found_existing" -eq 0 ]; then
+        log "Skipping Prettier for $raw_path (file not found)"
+    elif [ "$formatted" -eq 0 ]; then
+        log "Skipping Prettier for $raw_path (no supported file types found)"
+    fi
+
+    return 0
+}
+
 process_entry() {
     local entry="$1"
 
@@ -142,8 +210,12 @@ main() {
     require_cmd git
     require_cmd jq
     require_cmd curl
+    require_cmd npx
     load_api_key
     ensure_git_repo
+
+    log "Initial git status:"
+    git status
 
     local status_entries
     status_entries=$(collect_status_entries)
@@ -151,6 +223,12 @@ main() {
     if [ -z "$status_entries" ]; then
         log "No changes to commit."
         exit 0
+    fi
+
+    log "Running Prettier on pending files from initial status."
+    if ! format_entries_with_prettier <<< "$status_entries"; then
+        log "Prettier formatting failed; aborting."
+        exit 1
     fi
 
     # Process each status line independently
@@ -163,6 +241,8 @@ main() {
     done <<< "$status_entries"
 
     log "Finished committing pending files."
+    log "Final git status:"
+    git status
 }
 
 main "$@"
