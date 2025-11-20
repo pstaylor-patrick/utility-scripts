@@ -814,6 +814,10 @@ main() {
     # Copy the PR description to clipboard
     log "Copying PR description to clipboard..."
     pbcopy < ./pr.md
+
+    # Open the generated PR description in VS Code for quick review/editing
+    log "Opening PR description in VS Code..."
+    code ./pr.md
     
     # Print the PR description to stdout
     cat ./pr.md
