@@ -6,10 +6,11 @@ command_name="pra"
 
 usage() {
     cat <<EOF
-Usage: $0 <base-branch>
+Usage: $0 [--fix] <base-branch>
 
 Options:
   --completion [bash|zsh]   Print shell completion script for ${command_name}.
+  --fix                     After generating the report, ask codex to apply the recommended improvements and show git status.
 EOF
 }
 
@@ -83,14 +84,43 @@ EOF
     esac
 }
 
-if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-    usage
-    exit 0
-fi
+fix_mode=false
+base_branch=""
 
-if [[ "${1:-}" == "--completion" ]]; then
-    print_completion_script "${2:-}"
-    exit 0
+while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        --completion)
+            print_completion_script "${2:-}"
+            exit 0
+            ;;
+        --fix)
+            fix_mode=true
+            ;;
+        --*)
+            echo "Error: unknown option '$1'." >&2
+            usage >&2
+            exit 1
+            ;;
+        *)
+            if [ -z "$base_branch" ]; then
+                base_branch="$1"
+            else
+                echo "Error: too many arguments provided." >&2
+                usage >&2
+                exit 1
+            fi
+            ;;
+    esac
+    shift
+done
+
+if [ -z "$base_branch" ]; then
+    usage >&2
+    exit 1
 fi
 
 if ! command -v codex >/dev/null 2>&1; then
@@ -103,12 +133,6 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     exit 1
 fi
 
-if [ "$#" -lt 1 ]; then
-    usage >&2
-    exit 1
-fi
-
-base_branch="$1"
 diff_stat=$(git diff "$base_branch" --stat)
 commit_log=$(git log --oneline "${base_branch}"..HEAD)
 
@@ -127,4 +151,21 @@ ${commit_log}
 EOF
 )
 
-codex exec "${prompt}"
+report_file=""
+if [ "$fix_mode" = true ]; then
+    report_file=$(mktemp)
+    trap '[[ -n "${report_file:-}" ]] && rm -f "$report_file"' EXIT
+    codex exec "${prompt}" | tee "$report_file"
+else
+    codex exec "${prompt}"
+fi
+
+if [ "$fix_mode" = true ]; then
+    improvement_prompt="Use the code quality report below to implement the recommended improvements directly in this repository (current working directory). Make the suggested changes to the codebase.
+
+Code quality report:
+$(cat "$report_file")"
+
+    codex exec "${improvement_prompt}"
+    git status -sb
+fi
