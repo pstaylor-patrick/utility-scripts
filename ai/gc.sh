@@ -39,6 +39,26 @@ ensure_git_repo() {
     fi
 }
 
+maybe_clean_gc_log() {
+    local git_dir
+    git_dir=$(git rev-parse --git-dir)
+    local gc_log="$git_dir/gc.log"
+
+    if [ ! -f "$gc_log" ]; then
+        return
+    fi
+
+    log "Existing git gc log detected at $gc_log. Last run reported:"
+    tail -n 20 "$gc_log" || true
+    log "Running 'git prune --expire=now' to clear unreachable loose objects..."
+    if git prune --expire=now; then
+        rm -f "$gc_log"
+        log "Removed stale gc log; git auto-gc can resume normally."
+    else
+        log "git prune failed; leaving $gc_log in place."
+    fi
+}
+
 generate_commit_message() {
     local file_path="$1"
     local diff_content="$2"
@@ -213,6 +233,7 @@ main() {
     require_cmd npx
     load_api_key
     ensure_git_repo
+    maybe_clean_gc_log
 
     log "Initial git status:"
     git status
