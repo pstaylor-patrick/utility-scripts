@@ -6,9 +6,6 @@ set -euo pipefail
 # message derived from the file's staged diff. Designed to be invoked from
 # any repo (e.g., alias `gc=~/src/pstaylor-patrick/utility-scripts/ai/gc.sh`).
 
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-PROJECT_ROOT="$SCRIPT_DIR/.."
-
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >&2
 }
@@ -16,18 +13,6 @@ log() {
 require_cmd() {
     if ! command -v "$1" >/dev/null 2>&1; then
         echo "Error: $1 is required but not installed." >&2
-        exit 1
-    fi
-}
-
-load_api_key() {
-    if [ -f "$PROJECT_ROOT/.env" ]; then
-        # shellcheck disable=SC1091
-        source "$PROJECT_ROOT/.env"
-    fi
-
-    if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
-        echo "Error: DEEPSEEK_API_KEY is not set. Add it to $PROJECT_ROOT/.env" >&2
         exit 1
     fi
 }
@@ -63,41 +48,28 @@ generate_commit_message() {
     local file_path="$1"
     local diff_content="$2"
 
-    local system_prompt="You are a senior engineer writing a single, conventional git commit subject for one file. Respond with a concise, imperative, <=65 character line that captures the main change. Do not include quotes, backticks, or additional commentary."
-    local user_content="Repository path: $(pwd)\nFile: $file_path\n\nHere is the staged git diff for this file:\n---\n$diff_content\n---\n\nReturn only the commit subject line."
+    local prompt
+    prompt=$(cat <<EOF
+You are a senior engineer writing a single, conventional git commit subject for one file. Respond with a concise, imperative, <=65 character line that captures the main change. Do not include quotes, backticks, or additional commentary.
 
-    local payload
-    payload=$(jq -n \
-        --arg system_prompt "$system_prompt" \
-        --arg user_content "$user_content" \
-        '{
-            "model": "deepseek-chat",
-            "messages": [
-                {"role": "system", "content": $system_prompt},
-                {"role": "user", "content": $user_content}
-            ],
-            "temperature": 0.3
-        }')
+Repository path: $(pwd)
+File: $file_path
 
-    local response
-    response=$(curl -s -X POST "https://api.deepseek.com/chat/completions" \
-        -H "Authorization: Bearer $DEEPSEEK_API_KEY" \
-        -H "Content-Type: application/json" \
-        -d "$payload")
+Here is the staged git diff for this file:
+---
+$diff_content
+---
 
-    if [[ $? -ne 0 ]]; then
-        log "Error: Failed to call DeepSeek API for $file_path"
-        return 1
-    fi
-
-    if ! jq -e '.choices[0].message.content' <<<"$response" >/dev/null 2>&1; then
-        log "Error: Unexpected API response for $file_path"
-        log "$response"
-        return 1
-    fi
+Return only the commit subject line.
+EOF
+)
 
     local raw_message
-    raw_message=$(jq -r '.choices[0].message.content' <<<"$response")
+    if ! raw_message=$(codex exec "$prompt"); then
+        log "Error: Failed to call codex for $file_path"
+        return 1
+    fi
+
     # Use the first line, strip wrapping quotes/backticks/spaces.
     local cleaned
     cleaned=$(echo "$raw_message" \
@@ -228,10 +200,8 @@ process_entry() {
 
 main() {
     require_cmd git
-    require_cmd jq
-    require_cmd curl
+    require_cmd codex
     require_cmd npx
-    load_api_key
     ensure_git_repo
     maybe_clean_gc_log
 
