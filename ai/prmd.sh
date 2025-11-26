@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 
 DEFAULT_PULL_REQUEST_TEMPLATE="$HOME/src/pstaylor-patrick/utility-scripts/ai/prmd/pull_request_template.md"
+COMMAND_NAME="prmd"
+
+usage() {
+    cat <<EOF
+Usage: $0 [--stat] <base-branch>
+
+Options:
+  --completion [bash|zsh]   Print shell completion script for ${COMMAND_NAME}.
+  --stat                    Use git diff --stat summary only.
+  --help                    Show this help message.
+EOF
+}
 
 # Configuration for chunking to keep prompts within a safe size
 MAX_CHUNK_SIZE=30000  # Reduced chunk size to stay within token limits
@@ -8,6 +20,100 @@ OVERLAP_SIZE=200     # Reduced overlap for speed
 BATCH_SIZE=6         # Increased batch size to match parallel jobs
 ENABLE_PARALLEL=true # Enable parallel processing
 PARALLEL_JOBS=6      # Number of parallel jobs to run (scaled to 6)
+
+print_completion_script() {
+    local target_shell="${1:-}"
+
+    if [ -z "$target_shell" ]; then
+        if [ -n "${ZSH_VERSION:-}" ] || [ "$(basename "${SHELL:-}")" = "zsh" ]; then
+            target_shell="zsh"
+        else
+            target_shell="bash"
+        fi
+    fi
+
+    case "$target_shell" in
+        bash)
+            cat <<EOF
+_${COMMAND_NAME}_branch_completions() {
+    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        return
+    fi
+
+    git for-each-ref --format='%(refname:short)' refs/heads refs/remotes 2>/dev/null \\
+        | grep -vE '^origin/HEAD$' \\
+        | LC_ALL=C sort -u
+}
+
+_${COMMAND_NAME}_complete() {
+    local cur prev
+    cur="\${COMP_WORDS[COMP_CWORD]}"
+    prev="\${COMP_WORDS[COMP_CWORD-1]}"
+
+    COMPREPLY=()
+
+    if [[ "\$prev" == "--completion" ]]; then
+        mapfile -t COMPREPLY < <(compgen -W "bash zsh" -- "\$cur")
+        return
+    fi
+
+    if [[ "\$cur" == --* ]]; then
+        mapfile -t COMPREPLY < <(compgen -W "--stat --completion --help -h" -- "\$cur")
+        return
+    fi
+
+    local branches
+    branches=\$(_${COMMAND_NAME}_branch_completions)
+
+    if [ -n "\$branches" ]; then
+        mapfile -t COMPREPLY < <(compgen -W "\$branches" -- "\$cur")
+    fi
+}
+
+complete -o default -F _${COMMAND_NAME}_complete ${COMMAND_NAME}
+EOF
+            ;;
+        zsh)
+            local cmd="$COMMAND_NAME"
+            cat <<EOF
+#compdef ${cmd}
+
+_${cmd}_branch_completions() {
+    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        return
+    fi
+
+    git for-each-ref --format='%(refname:short)' refs/heads refs/remotes 2>/dev/null \\
+        | grep -vE '^origin/HEAD$' \\
+        | LC_ALL=C sort -u
+}
+
+_${cmd}_complete() {
+    local -a branches
+    branches=(\${(f)\$(_${cmd}_branch_completions)})
+
+    _arguments \\
+        '(-h --help)'{-h,--help}'[show help]' \\
+        '--stat[use git diff --stat summary]' \\
+        '--completion[print shell completion script]:shell:(bash zsh)' \\
+        '*:branch:->branch'
+
+    case \$state in
+        branch)
+            _describe 'branch' branches
+            ;;
+    esac
+}
+
+compdef _${cmd}_complete ${cmd}
+EOF
+            ;;
+        *)
+            echo "Error: unsupported shell '${target_shell}'. Use 'bash' or 'zsh'." >&2
+            exit 1
+            ;;
+    esac
+}
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >&2
@@ -738,25 +844,50 @@ EOF
 }
 
 main() {
-    if [ -z "$1" ]; then
-        echo "Usage: ./ai/prmd.sh BASE_BRANCH [--stat]"
-        echo "Example: ./ai/prmd.sh main"
-        echo "         ./ai/prmd.sh main --stat  (use statistical summary only)"
-        echo ""
-        echo "Default behavior: Try to process full diff in single codex call first,"
-        echo "fall back to stat summary + parallel chunks if diff is too large"
+    local base_branch=""
+    local use_stat="false"
+
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --help|-h)
+                usage
+                exit 0
+                ;;
+            --completion)
+                print_completion_script "${2:-}"
+                exit 0
+                ;;
+            --stat)
+                use_stat="true"
+                ;;
+            --*)
+                echo "Error: unknown option '$1'." >&2
+                usage >&2
+                exit 1
+                ;;
+            *)
+                if [ -z "$base_branch" ]; then
+                    base_branch="$1"
+                else
+                    echo "Error: too many arguments provided." >&2
+                    usage >&2
+                    exit 1
+                fi
+                ;;
+        esac
+        shift
+    done
+
+    if [ -z "$base_branch" ]; then
+        usage >&2
         exit 1
     fi
-
-    local base_branch="$1"
-    local use_stat="false"
 
     require_cmd git
     require_cmd codex
     
     # Check for flags
-    if [ "$2" = "--stat" ]; then
-        use_stat="true"
+    if [ "$use_stat" = "true" ]; then
         log "Using statistical diff summary only (--stat flag provided)"
     else
         log "Using optimized approach: try full diff first, fall back if needed"
