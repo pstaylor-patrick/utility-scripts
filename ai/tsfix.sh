@@ -41,12 +41,63 @@ detect_package_manager() {
 }
 
 typecheck_command_for() {
-    case "$1" in
-        npm) echo "npm run typecheck" ;;
-        pnpm) echo "pnpm typecheck" ;;
-        bun) echo "bun run typecheck" ;;
+    local pm="$1"
+    local script_name="$2"
+    case "$pm" in
+        npm) echo "npm run ${script_name}" ;;
+        pnpm) echo "pnpm run ${script_name}" ;;
+        bun) echo "bun run ${script_name}" ;;
         *) return 1 ;;
     esac
+}
+
+typecheck_script_name() {
+    local pkg_json="package.json"
+    if [ ! -f "$pkg_json" ]; then
+        return 1
+    fi
+
+    local script_name=""
+
+    if command -v node >/dev/null 2>&1; then
+        script_name=$(node - <<'NODE' || true
+const fs = require('fs');
+try {
+  const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+  const scripts = pkg.scripts || {};
+  if (Object.prototype.hasOwnProperty.call(scripts, 'typecheck')) {
+    console.log('typecheck');
+  } else if (Object.prototype.hasOwnProperty.call(scripts, 'type-check')) {
+    console.log('type-check');
+  }
+} catch (_) {}
+NODE
+)
+    fi
+
+    if [ -z "$script_name" ] && command -v python3 >/dev/null 2>&1; then
+        script_name=$(python3 - <<'PY' || true
+import json
+from pathlib import Path
+try:
+    pkg = json.loads(Path("package.json").read_text())
+    scripts = pkg.get("scripts") or {}
+    if "typecheck" in scripts:
+        print("typecheck")
+    elif "type-check" in scripts:
+        print("type-check")
+except Exception:
+    pass
+PY
+)
+    fi
+
+    if [ -n "$script_name" ]; then
+        echo "$script_name"
+        return 0
+    fi
+
+    return 1
 }
 
 parse_type_output() {
@@ -194,13 +245,18 @@ main() {
         die "No supported lockfile found (package-lock.json, pnpm-lock.yaml, bun.lockb)."
     fi
 
+    local type_script
+    if ! type_script=$(typecheck_script_name); then
+        die "No typecheck script found (expected \"typecheck\" or \"type-check\" in package.json)."
+    fi
+
     local type_cmd
-    if ! type_cmd=$(typecheck_command_for "$pm"); then
+    if ! type_cmd=$(typecheck_command_for "$pm" "$type_script"); then
         die "Failed to build typecheck command."
     fi
 
     log "Using package manager: ${pm}"
-    log "Running typecheck: ${type_cmd}"
+    log "Running typecheck script \"${type_script}\": ${type_cmd}"
 
     local type_log
     type_log=$(mktemp)
