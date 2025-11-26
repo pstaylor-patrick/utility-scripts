@@ -44,6 +44,31 @@ maybe_clean_gc_log() {
     fi
 }
 
+generate_commit_message_from_prompt() {
+    local prompt="$1"
+    local target_label="$2"
+    local raw_message
+    if ! raw_message=$(codex exec "$prompt"); then
+        log "Error: Failed to call codex for $target_label"
+        return 1
+    fi
+
+    local cleaned
+    cleaned=$(echo "$raw_message" \
+        | sed '/^---$/d' \
+        | head -n1 \
+        | sed 's/^[`"'"'"']//' \
+        | sed 's/[`"'"'"']$//' \
+        | sed 's/[[:space:]]\+$//')
+
+    if [ -z "$cleaned" ]; then
+        log "Error: Empty commit message generated for $target_label"
+        return 1
+    fi
+
+    echo "$cleaned"
+}
+
 generate_commit_message() {
     local file_path="$1"
     local diff_content="$2"
@@ -64,27 +89,28 @@ Return only the commit subject line.
 EOF
 )
 
-    local raw_message
-    if ! raw_message=$(codex exec "$prompt"); then
-        log "Error: Failed to call codex for $file_path"
-        return 1
-    fi
+    generate_commit_message_from_prompt "$prompt" "$file_path"
+}
 
-    # Use the first line, strip wrapping quotes/backticks/spaces.
-    local cleaned
-    cleaned=$(echo "$raw_message" \
-        | sed '/^---$/d' \
-        | head -n1 \
-        | sed 's/^[`"'"'"']//' \
-        | sed 's/[`"'"'"']$//' \
-        | sed 's/[[:space:]]\+$//')
+generate_combined_commit_message() {
+    local diff_content="$1"
 
-    if [ -z "$cleaned" ]; then
-        log "Error: Empty commit message generated for $file_path"
-        return 1
-    fi
+    local prompt
+    prompt=$(cat <<EOF
+You are a senior engineer writing a single, conventional git commit subject for the staged changes in this repository. Respond with a concise, imperative, <=65 character line that captures the main change. Do not include quotes, backticks, or additional commentary.
 
-    echo "$cleaned"
+Repository path: $(pwd)
+
+Here is the staged git diff for all staged changes:
+---
+$diff_content
+---
+
+Return only the commit subject line.
+EOF
+)
+
+    generate_commit_message_from_prompt "$prompt" "all staged changes"
 }
 
 collect_status_entries() {
@@ -161,6 +187,7 @@ run_prettier_for_entry() {
 
 process_entry() {
     local entry="$1"
+    local single_commit="$2"
 
     local status="${entry:0:2}"
     local raw_path="${entry:3}"
@@ -181,6 +208,10 @@ process_entry() {
     log "Staging ($status) $display_path"
     git add --all -- "${commit_paths[@]}"
 
+    if [ "$single_commit" -eq 1 ]; then
+        return 0
+    fi
+
     local diff_output
     diff_output=$(git diff --cached -- "${commit_paths[@]}")
     if [ -z "$diff_output" ]; then
@@ -199,6 +230,26 @@ process_entry() {
 }
 
 main() {
+    local single_commit=0
+
+    while getopts ":1h" opt; do
+        case "$opt" in
+            1)
+                single_commit=1
+                ;;
+            h)
+                echo "Usage: $(basename "$0") [-1]"
+                echo "  -1  stage and commit all changes in a single commit"
+                exit 0
+                ;;
+            \?)
+                echo "Invalid option: -$OPTARG" >&2
+                exit 1
+                ;;
+        esac
+    done
+    shift $((OPTIND - 1))
+
     require_cmd git
     require_cmd codex
     require_cmd npx
@@ -222,14 +273,36 @@ main() {
         exit 1
     fi
 
+    if [ "$single_commit" -eq 1 ]; then
+        log "Single-commit mode enabled (-1); staging all entries for one commit."
+    fi
+
     # Process each status line independently
     while IFS= read -r entry; do
         # Skip empty lines defensively
         [ -z "$entry" ] && continue
-        if ! process_entry "$entry"; then
+        if ! process_entry "$entry" "$single_commit"; then
             log "Encountered an error while processing: $entry"
         fi
     done <<< "$status_entries"
+
+    if [ "$single_commit" -eq 1 ]; then
+        local combined_diff
+        combined_diff=$(git diff --cached)
+        if [ -z "$combined_diff" ]; then
+            log "No staged diff found after staging; nothing to commit."
+            exit 0
+        fi
+
+        local commit_message
+        if ! commit_message=$(generate_combined_commit_message "$combined_diff"); then
+            log "Failed to generate commit message for staged changes."
+            exit 1
+        fi
+
+        log "Committing all staged changes with message: $commit_message"
+        git commit -m "$commit_message"
+    fi
 
     log "Finished committing pending files."
     log "Final git status:"
