@@ -8,6 +8,7 @@ FILE_ISSUES=()
 JOB_PIDS=()
 ISSUE_TOTAL=0
 TEST_CMD=""
+LOCKFILE_DIR=""
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >&2
@@ -25,18 +26,28 @@ require_cmd() {
 }
 
 detect_package_manager() {
-    if [ -f "package-lock.json" ]; then
-        echo "npm"
-        return 0
-    fi
-    if [ -f "pnpm-lock.yaml" ]; then
-        echo "pnpm"
-        return 0
-    fi
-    if [ -f "bun.lockb" ]; then
-        echo "bun"
-        return 0
-    fi
+    local dir="$PWD"
+    while :; do
+        if [ -f "${dir}/package-lock.json" ]; then
+            LOCKFILE_DIR="$dir"
+            echo "npm"
+            return 0
+        fi
+        if [ -f "${dir}/pnpm-lock.yaml" ]; then
+            LOCKFILE_DIR="$dir"
+            echo "pnpm"
+            return 0
+        fi
+        if [ -f "${dir}/bun.lockb" ]; then
+            LOCKFILE_DIR="$dir"
+            echo "bun"
+            return 0
+        fi
+        if [ "$dir" = "/" ]; then
+            break
+        fi
+        dir=$(dirname "$dir")
+    done
     return 1
 }
 
@@ -298,7 +309,11 @@ main() {
         die "Failed to build test command."
     fi
 
-    log "Using package manager: ${pm}"
+    if [ -n "$LOCKFILE_DIR" ] && [ "$LOCKFILE_DIR" != "$PWD" ]; then
+        log "Using package manager: ${pm} (lockfile at ${LOCKFILE_DIR})"
+    else
+        log "Using package manager: ${pm}"
+    fi
     log "Running test script \"${test_script}\": ${TEST_CMD}"
 
     local test_log
