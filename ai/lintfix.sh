@@ -10,6 +10,7 @@ FILE_KEYS=()
 FILE_ISSUES=()
 ISSUE_TOTAL=0
 LOCKFILE_DIR=""
+MAX_ROUNDS=3
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >&2
@@ -214,48 +215,64 @@ main() {
     else
         log "Using package manager: ${pm}"
     fi
-    log "Running lint: ${lint_cmd}"
+    log "Lint command: ${lint_cmd}"
 
-    local lint_log
-    lint_log=$(mktemp)
+    local round=1
+    while [ "$round" -le "$MAX_ROUNDS" ]; do
+        log "Round ${round}/${MAX_ROUNDS}: running lint"
 
-    set +e
-    eval "$lint_cmd" 2>&1 | tee "$lint_log"
-    local lint_status="${PIPESTATUS[0]}"
-    set -euo pipefail
+        ISSUES=()
+        JOB_PIDS=()
+        FILE_KEYS=()
+        FILE_ISSUES=()
+        ISSUE_TOTAL=0
 
-    parse_lint_output "$lint_log"
-    local file_count="${#FILE_KEYS[@]}"
+        local lint_log
+        lint_log=$(mktemp)
 
-    if [ "$file_count" -eq 0 ]; then
-        if [ "$lint_status" -eq 0 ]; then
-            log "Lint finished cleanly; no warnings or errors to fix."
+        set +e
+        eval "$lint_cmd" 2>&1 | tee "$lint_log"
+        local lint_status="${PIPESTATUS[0]}"
+        set -euo pipefail
+
+        parse_lint_output "$lint_log"
+        local file_count="${#FILE_KEYS[@]}"
+
+        if [ "$file_count" -eq 0 ]; then
+            if [ "$lint_status" -eq 0 ]; then
+                log "Lint finished cleanly on round ${round}; no warnings or errors to fix."
+                exit 0
+            fi
+            log "Lint exited with status ${lint_status} but no parseable issues were found. See ${lint_log}."
+            exit "$lint_status"
+        fi
+
+        log "Launching ${file_count} codex worker(s) in parallel for ${ISSUE_TOTAL} issue(s)."
+
+        for idx in "${!FILE_KEYS[@]}"; do
+            local file_path="${FILE_KEYS[$idx]}"
+            local file_issues="${FILE_ISSUES[$idx]}"
+            launch_codex_fix "$file_path" "$file_issues"
+        done
+
+        local failures=0
+        for pid in "${JOB_PIDS[@]}"; do
+            if ! wait "$pid"; then
+                failures=$((failures + 1))
+            fi
+        done
+
+        if [ "$failures" -gt 0 ]; then
+            die "${failures} codex job(s) failed."
+        fi
+
+        if [ "$round" -eq "$MAX_ROUNDS" ]; then
+            log "Reached max lintfix rounds (${MAX_ROUNDS}); rerun lint to confirm clean output."
             exit 0
         fi
-        log "Lint exited with status ${lint_status} but no parseable issues were found. See ${lint_log}."
-        exit "$lint_status"
-    fi
 
-    log "Launching ${file_count} codex worker(s) in parallel for ${ISSUE_TOTAL} issue(s)."
-
-    for idx in "${!FILE_KEYS[@]}"; do
-        local file_path="${FILE_KEYS[$idx]}"
-        local file_issues="${FILE_ISSUES[$idx]}"
-        launch_codex_fix "$file_path" "$file_issues"
+        round=$((round + 1))
     done
-
-    local failures=0
-    for pid in "${JOB_PIDS[@]}"; do
-        if ! wait "$pid"; then
-            failures=$((failures + 1))
-        fi
-    done
-
-    if [ "$failures" -gt 0 ]; then
-        die "${failures} codex job(s) failed."
-    fi
-
-    log "All lint fixes completed."
 }
 
 main "$@"

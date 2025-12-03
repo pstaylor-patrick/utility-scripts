@@ -9,6 +9,7 @@ FILE_KEYS=()
 FILE_ISSUES=()
 ISSUE_TOTAL=0
 LOCKFILE_DIR=""
+MAX_ROUNDS=3
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >&2
@@ -271,48 +272,64 @@ main() {
     else
         log "Using package manager: ${pm}"
     fi
-    log "Running typecheck script \"${type_script}\": ${type_cmd}"
+    log "Typecheck command: ${type_cmd}"
 
-    local type_log
-    type_log=$(mktemp)
+    local round=1
+    while [ "$round" -le "$MAX_ROUNDS" ]; do
+        log "Round ${round}/${MAX_ROUNDS}: running typecheck"
 
-    set +e
-    eval "$type_cmd" 2>&1 | tee "$type_log"
-    local type_status="${PIPESTATUS[0]}"
-    set -euo pipefail
+        ISSUES=()
+        JOB_PIDS=()
+        FILE_KEYS=()
+        FILE_ISSUES=()
+        ISSUE_TOTAL=0
 
-    parse_type_output "$type_log"
-    local file_count="${#FILE_KEYS[@]}"
+        local type_log
+        type_log=$(mktemp)
 
-    if [ "$file_count" -eq 0 ]; then
-        if [ "$type_status" -eq 0 ]; then
-            log "Typecheck finished cleanly; no issues to fix."
+        set +e
+        eval "$type_cmd" 2>&1 | tee "$type_log"
+        local type_status="${PIPESTATUS[0]}"
+        set -euo pipefail
+
+        parse_type_output "$type_log"
+        local file_count="${#FILE_KEYS[@]}"
+
+        if [ "$file_count" -eq 0 ]; then
+            if [ "$type_status" -eq 0 ]; then
+                log "Typecheck finished cleanly on round ${round}; no issues to fix."
+                exit 0
+            fi
+            log "Typecheck exited with status ${type_status} but no parseable issues were found. See ${type_log}."
+            exit "$type_status"
+        fi
+
+        log "Launching ${file_count} codex worker(s) in parallel for ${ISSUE_TOTAL} issue(s)."
+
+        for idx in "${!FILE_KEYS[@]}"; do
+            local file_path="${FILE_KEYS[$idx]}"
+            local file_issues="${FILE_ISSUES[$idx]}"
+            launch_codex_fix "$file_path" "$file_issues"
+        done
+
+        local failures=0
+        for pid in "${JOB_PIDS[@]}"; do
+            if ! wait "$pid"; then
+                failures=$((failures + 1))
+            fi
+        done
+
+        if [ "$failures" -gt 0 ]; then
+            die "${failures} codex job(s) failed."
+        fi
+
+        if [ "$round" -eq "$MAX_ROUNDS" ]; then
+            log "Reached max tsfix rounds (${MAX_ROUNDS}); rerun typecheck to confirm clean output."
             exit 0
         fi
-        log "Typecheck exited with status ${type_status} but no parseable issues were found. See ${type_log}."
-        exit "$type_status"
-    fi
 
-    log "Launching ${file_count} codex worker(s) in parallel for ${ISSUE_TOTAL} issue(s)."
-
-    for idx in "${!FILE_KEYS[@]}"; do
-        local file_path="${FILE_KEYS[$idx]}"
-        local file_issues="${FILE_ISSUES[$idx]}"
-        launch_codex_fix "$file_path" "$file_issues"
+        round=$((round + 1))
     done
-
-    local failures=0
-    for pid in "${JOB_PIDS[@]}"; do
-        if ! wait "$pid"; then
-            failures=$((failures + 1))
-        fi
-    done
-
-    if [ "$failures" -gt 0 ]; then
-        die "${failures} codex job(s) failed."
-    fi
-
-    log "All typecheck fixes completed."
 }
 
 main "$@"

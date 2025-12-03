@@ -9,6 +9,7 @@ JOB_PIDS=()
 ISSUE_TOTAL=0
 TEST_CMD=""
 LOCKFILE_DIR=""
+MAX_ROUNDS=3
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >&2
@@ -314,58 +315,73 @@ main() {
     else
         log "Using package manager: ${pm}"
     fi
-    log "Running test script \"${test_script}\": ${TEST_CMD}"
+    log "Test command: ${TEST_CMD}"
 
-    local test_log
-    test_log=$(mktemp)
+    local round=1
+    while [ "$round" -le "$MAX_ROUNDS" ]; do
+        log "Round ${round}/${MAX_ROUNDS}: running tests"
 
-    set +e
-    eval "$TEST_CMD" 2>&1 | tee "$test_log"
-    local test_status="${PIPESTATUS[0]}"
-    set -euo pipefail
+        FILE_KEYS=()
+        FILE_ISSUES=()
+        JOB_PIDS=()
+        ISSUE_TOTAL=0
 
-    if [ "$test_status" -eq 0 ]; then
-        log "Tests finished cleanly; no failures detected."
-        exit 0
-    fi
+        local test_log
+        test_log=$(mktemp)
 
-    # Identify failing files (prefer Codex, then fallback parse)
-    if ! codex_extract_files "$test_log"; then
-        log "Codex-based failure detection returned no files; falling back to regex parsing."
-    fi
-    parse_fail_blocks "$test_log"
+        set +e
+        eval "$TEST_CMD" 2>&1 | tee "$test_log"
+        local test_status="${PIPESTATUS[0]}"
+        set -euo pipefail
 
-    local file_count="${#FILE_KEYS[@]}"
-    if [ "$file_count" -eq 0 ]; then
-        log "Tests failed (exit ${test_status}) but no parseable failures were found. See ${test_log}."
-        exit "$test_status"
-    fi
-
-    log "Tests failed (exit ${test_status}); generating summary."
-    local summary
-    summary=$(generate_report "$test_log")
-    printf "\n%s\n" "$summary"
-    log "Raw test log: ${test_log}"
-
-    log "Launching ${file_count} codex worker(s) in parallel for ${ISSUE_TOTAL} failure section(s)."
-    for idx in "${!FILE_KEYS[@]}"; do
-        local file_path="${FILE_KEYS[$idx]}"
-        local file_issues="${FILE_ISSUES[$idx]-}"
-        launch_codex_fix "$file_path" "$file_issues"
-    done
-
-    local failures=0
-    for pid in "${JOB_PIDS[@]}"; do
-        if ! wait "$pid"; then
-            failures=$((failures + 1))
+        if [ "$test_status" -eq 0 ]; then
+            log "Tests finished cleanly on round ${round}; no failures detected."
+            exit 0
         fi
+
+        # Identify failing files (prefer Codex, then fallback parse)
+        if ! codex_extract_files "$test_log"; then
+            log "Codex-based failure detection returned no files; falling back to regex parsing."
+        fi
+        parse_fail_blocks "$test_log"
+
+        local file_count="${#FILE_KEYS[@]}"
+        if [ "$file_count" -eq 0 ]; then
+            log "Tests failed (exit ${test_status}) but no parseable failures were found. See ${test_log}."
+            exit "$test_status"
+        fi
+
+        log "Tests failed (exit ${test_status}); generating summary."
+        local summary
+        summary=$(generate_report "$test_log")
+        printf "\n%s\n" "$summary"
+        log "Raw test log: ${test_log}"
+
+        log "Launching ${file_count} codex worker(s) in parallel for ${ISSUE_TOTAL} failure section(s)."
+        for idx in "${!FILE_KEYS[@]}"; do
+            local file_path="${FILE_KEYS[$idx]}"
+            local file_issues="${FILE_ISSUES[$idx]-}"
+            launch_codex_fix "$file_path" "$file_issues"
+        done
+
+        local failures=0
+        for pid in "${JOB_PIDS[@]}"; do
+            if ! wait "$pid"; then
+                failures=$((failures + 1))
+            fi
+        done
+
+        if [ "$failures" -gt 0 ]; then
+            die "${failures} codex job(s) failed."
+        fi
+
+        if [ "$round" -eq "$MAX_ROUNDS" ]; then
+            log "Reached max testfix rounds (${MAX_ROUNDS}); rerun ${TEST_CMD} to confirm clean output."
+            exit 0
+        fi
+
+        round=$((round + 1))
     done
-
-    if [ "$failures" -gt 0 ]; then
-        die "${failures} codex job(s) failed."
-    fi
-
-    log "All test fixes completed."
 }
 
 main "$@"
