@@ -53,12 +53,20 @@ _${COMMAND_NAME}_complete() {
     COMPREPLY=()
 
     if [[ "\$prev" == "--completion" ]]; then
-        mapfile -t COMPREPLY < <(compgen -W "bash zsh" -- "\$cur")
+        if type mapfile >/dev/null 2>&1; then
+            mapfile -t COMPREPLY < <(compgen -W "bash zsh" -- "\$cur")
+        else
+            IFS=\$'\n' COMPREPLY=(\$(compgen -W "bash zsh" -- "\$cur"))
+        fi
         return
     fi
 
     if [[ "\$cur" == --* ]]; then
-        mapfile -t COMPREPLY < <(compgen -W "--stat --completion --help -h" -- "\$cur")
+        if type mapfile >/dev/null 2>&1; then
+            mapfile -t COMPREPLY < <(compgen -W "--stat --completion --help -h" -- "\$cur")
+        else
+            IFS=\$'\n' COMPREPLY=(\$(compgen -W "--stat --completion --help -h" -- "\$cur"))
+        fi
         return
     fi
 
@@ -66,7 +74,12 @@ _${COMMAND_NAME}_complete() {
     branches=\$(_${COMMAND_NAME}_branch_completions)
 
     if [ -n "\$branches" ]; then
-        mapfile -t COMPREPLY < <(compgen -W "\$branches" -- "\$cur")
+        # macOS ships an older bash without mapfile; fall back to array expansion when unavailable
+        if type mapfile >/dev/null 2>&1; then
+            mapfile -t COMPREPLY < <(compgen -W "\$branches" -- "\$cur")
+        else
+            IFS=\$'\n' COMPREPLY=(\$(compgen -W "\$branches" -- "\$cur"))
+        fi
     fi
 }
 
@@ -77,6 +90,11 @@ EOF
             local cmd="$COMMAND_NAME"
             cat <<EOF
 #compdef ${cmd}
+
+# Initialize zsh completion system if it isn't already
+if ! type compdef >/dev/null 2>&1; then
+    autoload -Uz compinit && compinit
+fi
 
 _${cmd}_branch_completions() {
     if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -89,20 +107,11 @@ _${cmd}_branch_completions() {
 }
 
 _${cmd}_complete() {
-    local -a branches
-    branches=(\${(f)\$(_${cmd}_branch_completions)})
-
     _arguments \\
         '(-h --help)'{-h,--help}'[show help]' \\
         '--stat[use git diff --stat summary]' \\
         '--completion[print shell completion script]:shell:(bash zsh)' \\
-        '*:branch:->branch'
-
-    case \$state in
-        branch)
-            _describe 'branch' branches
-            ;;
-    esac
+        '*:branch:_${cmd}_branch_completions'
 }
 
 compdef _${cmd}_complete ${cmd}
@@ -128,15 +137,37 @@ require_cmd() {
 
 # Ensure the PR template starts with an H1 title placeholder
 ensure_title_placeholder() {
+    local pr_file="./pr.md"
+    local placeholder="# pr title"
     local first_line
-    first_line=$(awk 'NF {print; exit}' ./pr.md)
+    first_line=$(awk 'NF {print; exit}' "$pr_file" 2>/dev/null)
     local first_line_trimmed
-    first_line_trimmed=$(printf "%s" "$first_line" | sed 's/^[[:space:]]*//')
+    first_line_trimmed=$(printf "%s" "$first_line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
-    # Require a single leading # so H2/H3 templates still get a title injected
-    if [ -z "$first_line_trimmed" ] || [[ ! "$first_line_trimmed" =~ ^#([^#]|$) ]]; then
+    if [ -z "$first_line_trimmed" ]; then
         log "Adding top-level PR title placeholder"
-        printf "# pr title\n\n%s\n" "$(cat ./pr.md)" > ./pr.md
+        printf "%s\n\n%s\n" "$placeholder" "$(cat "$pr_file" 2>/dev/null)" > "$pr_file"
+        return
+    fi
+
+    if [[ "$first_line_trimmed" =~ ^#([^#]|$) ]]; then
+        if [ "$first_line_trimmed" != "$placeholder" ]; then
+            log "Replacing existing top-level heading with PR title placeholder"
+            awk -v placeholder="$placeholder" '
+                BEGIN {replaced=0}
+                {
+                    if (!replaced && $0 ~ /[^[:space:]]/) {
+                        print placeholder
+                        replaced=1
+                        next
+                    }
+                    print
+                }
+            ' "$pr_file" > "${pr_file}.tmp" && mv "${pr_file}.tmp" "$pr_file"
+        fi
+    else
+        log "Adding top-level PR title placeholder"
+        printf "%s\n\n%s\n" "$placeholder" "$(cat "$pr_file" 2>/dev/null)" > "$pr_file"
     fi
 }
 
