@@ -24,6 +24,15 @@ ensure_git_repo() {
     fi
 }
 
+enter_repo_root() {
+    local repo_root
+    repo_root=$(git rev-parse --show-toplevel)
+    if [ "$PWD" != "$repo_root" ]; then
+        log "Switching to git repository root: $repo_root"
+        cd "$repo_root"
+    fi
+}
+
 maybe_clean_gc_log() {
     local git_dir
     git_dir=$(git rev-parse --git-dir)
@@ -254,6 +263,7 @@ main() {
     require_cmd codex
     require_cmd npx
     ensure_git_repo
+    enter_repo_root
     maybe_clean_gc_log
 
     log "Initial git status:"
