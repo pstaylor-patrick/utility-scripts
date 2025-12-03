@@ -2,112 +2,18 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ai/lib/common.sh
+. "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=ai/lib/codex.sh
+. "${SCRIPT_DIR}/lib/codex.sh"
+
 LOCKFILE_DIR=""
 MAX_ROUNDS=3
 BUILD_CMD=""
 
-log() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >&2
-}
-
-die() {
-  echo "Error: $*" >&2
-  exit 1
-}
-
-require_cmd() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    die "$1 is required but not installed or on PATH."
-  fi
-}
-
-detect_package_manager() {
-  local dir="$PWD"
-  while :; do
-    if [ -f "${dir}/package-lock.json" ]; then
-      LOCKFILE_DIR="$dir"
-      echo "npm"
-      return 0
-    fi
-    if [ -f "${dir}/pnpm-lock.yaml" ]; then
-      LOCKFILE_DIR="$dir"
-      echo "pnpm"
-      return 0
-    fi
-    if [ -f "${dir}/bun.lockb" ]; then
-      LOCKFILE_DIR="$dir"
-      echo "bun"
-      return 0
-    fi
-    if [ "$dir" = "/" ]; then
-      break
-    fi
-    dir=$(dirname "$dir")
-  done
-  return 1
-}
-
-build_command_for() {
-  local pm="$1"
-  local script_name="$2"
-  case "$pm" in
-    npm) echo "npm run ${script_name}" ;;
-    pnpm) echo "pnpm run ${script_name}" ;;
-    bun) echo "bun run ${script_name}" ;;
-    *) return 1 ;;
-  esac
-}
-
 build_script_name() {
-  if [ ! -f "package.json" ]; then
-    return 1
-  fi
-
-  local candidates=("build" "build:ci")
-  local script_name=""
-
-  if command -v node >/dev/null 2>&1; then
-    script_name=$(node - <<'NODE' || true
-const fs = require('fs');
-const candidates = ["build", "build:ci"];
-try {
-  const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-  const scripts = pkg.scripts || {};
-  for (const name of candidates) {
-    if (Object.prototype.hasOwnProperty.call(scripts, name)) {
-      console.log(name);
-      process.exit(0);
-    }
-  }
-} catch (_) {}
-NODE
-)
-  fi
-
-  if [ -z "$script_name" ] && command -v python3 >/dev/null 2>&1; then
-    script_name=$(python3 - <<'PY' || true
-import json
-from pathlib import Path
-candidates = ["build", "build:ci"]
-try:
-    pkg = json.loads(Path("package.json").read_text())
-    scripts = pkg.get("scripts") or {}
-    for name in candidates:
-        if name in scripts:
-            print(name)
-            break
-except Exception:
-    pass
-PY
-)
-  fi
-
-  if [ -n "$script_name" ]; then
-    echo "$script_name"
-    return 0
-  fi
-
-  return 1
+  find_package_script "build" "build:ci"
 }
 
 launch_codex_fix() {
@@ -153,7 +59,7 @@ main() {
     die "No build script found (tried \"build\", \"build:ci\" in package.json)."
   fi
 
-  if ! BUILD_CMD=$(build_command_for "$pm" "$script_name"); then
+  if ! BUILD_CMD=$(build_pm_command "$pm" "$script_name"); then
     die "Failed to build build command."
   fi
 

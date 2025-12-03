@@ -2,6 +2,12 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ai/lib/common.sh
+. "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=ai/lib/codex.sh
+. "${SCRIPT_DIR}/lib/codex.sh"
+
 LOG_SEP=$'\n---\n'
 FILE_KEYS=()
 FILE_ISSUES=()
@@ -11,108 +17,14 @@ TEST_CMD=""
 LOCKFILE_DIR=""
 MAX_ROUNDS=3
 
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >&2
-}
-
-die() {
-    echo "Error: $*" >&2
-    exit 1
-}
-
-require_cmd() {
-    if ! command -v "$1" >/dev/null 2>&1; then
-        die "$1 is required but not installed or on PATH."
-    fi
-}
-
-detect_package_manager() {
-    local dir="$PWD"
-    while :; do
-        if [ -f "${dir}/package-lock.json" ]; then
-            LOCKFILE_DIR="$dir"
-            echo "npm"
-            return 0
-        fi
-        if [ -f "${dir}/pnpm-lock.yaml" ]; then
-            LOCKFILE_DIR="$dir"
-            echo "pnpm"
-            return 0
-        fi
-        if [ -f "${dir}/bun.lockb" ]; then
-            LOCKFILE_DIR="$dir"
-            echo "bun"
-            return 0
-        fi
-        if [ "$dir" = "/" ]; then
-            break
-        fi
-        dir=$(dirname "$dir")
-    done
-    return 1
-}
-
 test_script_name() {
-    if [ ! -f "package.json" ]; then
-        return 1
-    fi
-
-    local candidates=("test" "test:ci" "test:unit")
-    local script_name=""
-
-    if command -v node >/dev/null 2>&1; then
-        script_name=$(node - <<'NODE' || true
-const fs = require('fs');
-const candidates = ["test", "test:ci", "test:unit"];
-try {
-  const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-  const scripts = pkg.scripts || {};
-  for (const name of candidates) {
-    if (Object.prototype.hasOwnProperty.call(scripts, name)) {
-      console.log(name);
-      process.exit(0);
-    }
-  }
-} catch (_) {}
-NODE
-)
-    fi
-
-    if [ -z "$script_name" ] && command -v python3 >/dev/null 2>&1; then
-        script_name=$(python3 - <<'PY' || true
-import json
-from pathlib import Path
-candidates = ["test", "test:ci", "test:unit"]
-try:
-    pkg = json.loads(Path("package.json").read_text())
-    scripts = pkg.get("scripts") or {}
-    for name in candidates:
-        if name in scripts:
-            print(name)
-            break
-except Exception:
-    pass
-PY
-)
-    fi
-
-    if [ -n "$script_name" ]; then
-        echo "$script_name"
-        return 0
-    fi
-
-    return 1
+  find_package_script "test" "test:ci" "test:unit"
 }
 
 test_command_for() {
-    local pm="$1"
-    local script="$2"
-    case "$pm" in
-        npm) echo "npm run ${script}" ;;
-        pnpm) echo "pnpm run ${script}" ;;
-        bun) echo "bun run ${script}" ;;
-        *) return 1 ;;
-    esac
+  local pm="$1"
+  local script="$2"
+  build_pm_command "$pm" "$script"
 }
 
 ensure_file_entry() {
@@ -199,30 +111,17 @@ parse_fail_blocks() {
 }
 
 launch_codex_fix() {
-    local file_path="$1"
-    local issues="$2"
+  local file_path="$1"
+  local issues="$2"
 
-    local friendly
-    friendly=$(basename "$file_path")
-    friendly="${friendly%.*}"
-    friendly=$(printf "%s" "$friendly" | sed 's/[][_-]/ /g; s/[[:space:]]\+/ /g; s/^ //; s/ $//')
-    [ -z "$friendly" ] && friendly="this file"
+  local friendly
+  friendly=$(friendly_name_from_path "$file_path")
 
-    local parent_dir
-    parent_dir=$(basename "$(dirname "$file_path")")
-    if [ -n "$parent_dir" ] && [ "$parent_dir" != "." ] && [ "$parent_dir" != "$(basename "$PWD")" ]; then
-        friendly="${parent_dir} ${friendly}"
-    fi
+  local label
+  label=$(clamp_label "${friendly} tests")
 
-    local label="${friendly} tests"
-    label=$(printf "%s" "$label" | tr '\n' ' ' | tr '\t' ' ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')
-    if [ "${#label}" -gt 50 ]; then
-        label="${label:0:47}..."
-    fi
-    local prefix="[$label]"
-
-    local prompt
-    prompt=$(cat <<EOF
+  local prompt
+  prompt=$(cat <<EOF
 You are an expert developer fixing automated test failures directly in the current repository.
 Workdir: $(pwd)
 
@@ -236,17 +135,8 @@ Fix the underlying code and/or tests so the tests in this file pass. Do not skip
 EOF
 )
 
-    {
-        log "${prefix} starting"
-        if codex exec "$prompt" 2>&1 | awk -v p="${prefix} " '{print p $0}'; then
-            log "${prefix} completed"
-        else
-            log "${prefix} failed"
-            return 1
-        fi
-    } &
-
-    JOB_PIDS+=("$!")
+  codex_stream_with_label "$label" "$prompt" &
+  JOB_PIDS+=("$!")
 }
 
 generate_report() {

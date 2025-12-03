@@ -2,6 +2,12 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ai/lib/common.sh
+. "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=ai/lib/codex.sh
+. "${SCRIPT_DIR}/lib/codex.sh"
+
 DELIM=$'\x1f'
 ISSUES=()
 JOB_PIDS=()
@@ -11,105 +17,14 @@ ISSUE_TOTAL=0
 LOCKFILE_DIR=""
 MAX_ROUNDS=3
 
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >&2
-}
-
-die() {
-    echo "Error: $*" >&2
-    exit 1
-}
-
-require_cmd() {
-    if ! command -v "$1" >/dev/null 2>&1; then
-        die "$1 is required but not installed or on PATH."
-    fi
-}
-
-detect_package_manager() {
-    local dir="$PWD"
-    while :; do
-        if [ -f "${dir}/package-lock.json" ]; then
-            LOCKFILE_DIR="$dir"
-            echo "npm"
-            return 0
-        fi
-        if [ -f "${dir}/pnpm-lock.yaml" ]; then
-            LOCKFILE_DIR="$dir"
-            echo "pnpm"
-            return 0
-        fi
-        if [ -f "${dir}/bun.lockb" ]; then
-            LOCKFILE_DIR="$dir"
-            echo "bun"
-            return 0
-        fi
-        if [ "$dir" = "/" ]; then
-            break
-        fi
-        dir=$(dirname "$dir")
-    done
-    return 1
-}
-
 typecheck_command_for() {
-    local pm="$1"
-    local script_name="$2"
-    case "$pm" in
-        npm) echo "npm run ${script_name}" ;;
-        pnpm) echo "pnpm run ${script_name}" ;;
-        bun) echo "bun run ${script_name}" ;;
-        *) return 1 ;;
-    esac
+  local pm="$1"
+  local script_name="$2"
+  build_pm_command "$pm" "$script_name"
 }
 
 typecheck_script_name() {
-    local pkg_json="package.json"
-    if [ ! -f "$pkg_json" ]; then
-        return 1
-    fi
-
-    local script_name=""
-
-    if command -v node >/dev/null 2>&1; then
-        script_name=$(node - <<'NODE' || true
-const fs = require('fs');
-try {
-  const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-  const scripts = pkg.scripts || {};
-  if (Object.prototype.hasOwnProperty.call(scripts, 'typecheck')) {
-    console.log('typecheck');
-  } else if (Object.prototype.hasOwnProperty.call(scripts, 'type-check')) {
-    console.log('type-check');
-  }
-} catch (_) {}
-NODE
-)
-    fi
-
-    if [ -z "$script_name" ] && command -v python3 >/dev/null 2>&1; then
-        script_name=$(python3 - <<'PY' || true
-import json
-from pathlib import Path
-try:
-    pkg = json.loads(Path("package.json").read_text())
-    scripts = pkg.get("scripts") or {}
-    if "typecheck" in scripts:
-        print("typecheck")
-    elif "type-check" in scripts:
-        print("type-check")
-except Exception:
-    pass
-PY
-)
-    fi
-
-    if [ -n "$script_name" ]; then
-        echo "$script_name"
-        return 0
-    fi
-
-    return 1
+  find_package_script "typecheck" "type-check"
 }
 
 parse_type_output() {
@@ -174,27 +89,14 @@ parse_type_output() {
 }
 
 launch_codex_fix() {
-    local file_path="$1"
-    local issues="$2"
+  local file_path="$1"
+  local issues="$2"
 
-    # Derive a friendly name from the path (fallback if Codex summary fails)
-    local friendly_name
-    friendly_name=$(basename "$file_path")
-    friendly_name="${friendly_name%.*}"
-    friendly_name=$(printf "%s" "$friendly_name" | sed 's/[][_-]/ /g; s/[[:space:]]\+/ /g; s/^ //; s/ $//')
-    if [ -z "$friendly_name" ]; then
-        friendly_name="this file"
-    fi
-    local parent_dir
-    parent_dir=$(basename "$(dirname "$file_path")")
-    if [ -n "$parent_dir" ] && [ "$parent_dir" != "." ] && [ "$parent_dir" != "$(basename "$PWD")" ]; then
-        friendly_name="${parent_dir} ${friendly_name}"
-    fi
+  local friendly_name
+  friendly_name=$(friendly_name_from_path "$file_path")
 
-    # Build a Codex-generated, <=50 char summary for streaming logs
-    local label=""
-    local summary_prompt
-    summary_prompt=$(cat <<EOF
+  local summary_prompt
+  summary_prompt=$(cat <<EOF
 Summarize these typecheck issues for one file in <=50 characters, single line, no quotes or code fences.
 Use a short, semantic page/feature name (e.g., "homepage", "client detail page", "${friendly_name}") instead of the literal filename, plus the issue gist/count.
 File: ${file_path}
@@ -204,25 +106,11 @@ Return only the summary text.
 EOF
 )
 
-    if label=$(codex exec "$summary_prompt" 2>/dev/null); then
-        label=$(printf "%s" "$label" | sed '/^```.*$/d' | sed '/^---$/d' | head -n1 | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-    else
-        label=""
-    fi
+  local label
+  label=$(codex_label_from_prompt "$summary_prompt" "${friendly_name} type fixes")
 
-    if [ -z "$label" ]; then
-        label="${friendly_name} type fixes"
-    fi
-
-    # Collapse whitespace and clamp length for readability
-    label=$(printf "%s" "$label" | tr '\n' ' ' | tr '\t' ' ' | sed 's/[[:space:]]\+/ /g' | sed 's/^ //; s/ $//')
-    if [ "${#label}" -gt 50 ]; then
-        label="${label:0:47}..."
-    fi
-    local prefix="[$label]"
-
-    local prompt
-    prompt=$(cat <<EOF
+  local prompt
+  prompt=$(cat <<EOF
 You are an expert developer fixing TypeScript typecheck findings directly in the current repository.
 Workdir: $(pwd)
 
@@ -236,17 +124,8 @@ Apply changes to resolve this typecheck issue without changing intended behavior
 EOF
 )
 
-    {
-        log "${prefix} starting"
-        if codex exec "$prompt" 2>&1 | awk -v p="${prefix} " '{print p $0}'; then
-            log "${prefix} completed"
-        else
-            log "${prefix} failed"
-            return 1
-        fi
-    } &
-
-    JOB_PIDS+=("$!")
+  codex_stream_with_label "$label" "$prompt" &
+  JOB_PIDS+=("$!")
 }
 
 main() {
