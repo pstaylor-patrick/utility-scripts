@@ -3,6 +3,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ai/lib/provider.sh
+. "${SCRIPT_DIR}/lib/provider.sh"
 # shellcheck source=ai/lib/common.sh
 . "${SCRIPT_DIR}/lib/common.sh"
 # shellcheck source=ai/lib/codex.sh
@@ -18,9 +20,10 @@ LOCKFILE_DIR=""
 MAX_ROUNDS=3
 
 usage() {
-    echo "Usage: $(basename "$0") [-c] [-o] [-h]"
+    echo "Usage: $(basename "$0") [-c] [-d] [-x] [-h]"
     echo "  -c  use Claude Code CLI for AI operations"
-    echo "  -o  use OpenAI Codex for AI operations (default)"
+    echo "  -d  use DeepSeek API for AI operations"
+    echo "  -x  use OpenAI Codex for AI operations (default)"
     echo "  -h  show this help message"
 }
 
@@ -95,7 +98,7 @@ parse_type_output() {
     done < "$log_file"
 }
 
-launch_codex_fix() {
+launch_ai_fix() {
   local file_path="$1"
   local issues="$2"
 
@@ -136,13 +139,16 @@ EOF
 }
 
 main() {
-    while getopts ":coh" opt; do
+    while getopts ":cdxh" opt; do
         case "$opt" in
             c)
-                AI_BACKEND="claude"
+                ai_set_provider claude
                 ;;
-            o)
-                AI_BACKEND="codex"
+            d)
+                ai_set_provider deepseek
+                ;;
+            x)
+                ai_set_provider codex
                 ;;
             h)
                 usage
@@ -157,7 +163,7 @@ main() {
     done
     shift $((OPTIND - 1))
 
-    require_ai_cmd
+    ai_require_provider
 
     local pm
     if ! pm=$(detect_package_manager); then
@@ -181,6 +187,7 @@ main() {
         log "Using package manager: ${pm}"
     fi
     log "Typecheck command: ${type_cmd}"
+    log "AI provider: $(ai_provider_name)"
 
     local round=1
     while [ "$round" -le "$MAX_ROUNDS" ]; do
@@ -217,7 +224,7 @@ main() {
         for idx in "${!FILE_KEYS[@]}"; do
             local file_path="${FILE_KEYS[$idx]}"
             local file_issues="${FILE_ISSUES[$idx]}"
-            launch_codex_fix "$file_path" "$file_issues"
+            launch_ai_fix "$file_path" "$file_issues"
         done
 
         local failures=0

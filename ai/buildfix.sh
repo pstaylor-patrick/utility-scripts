@@ -3,6 +3,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ai/lib/provider.sh
+. "${SCRIPT_DIR}/lib/provider.sh"
 # shellcheck source=ai/lib/common.sh
 . "${SCRIPT_DIR}/lib/common.sh"
 # shellcheck source=ai/lib/codex.sh
@@ -13,9 +15,10 @@ MAX_ROUNDS=3
 BUILD_CMD=""
 
 usage() {
-    echo "Usage: $(basename "$0") [-c] [-o] [-h]"
+    echo "Usage: $(basename "$0") [-c] [-d] [-x] [-h]"
     echo "  -c  use Claude Code CLI for AI operations"
-    echo "  -o  use OpenAI Codex for AI operations (default)"
+    echo "  -d  use DeepSeek API for AI operations"
+    echo "  -x  use OpenAI Codex for AI operations (default)"
     echo "  -h  show this help message"
 }
 
@@ -23,7 +26,7 @@ build_script_name() {
   find_package_script "build" "build:ci"
 }
 
-launch_codex_fix() {
+launch_ai_fix() {
   local log_file="$1"
   local exit_code="$2"
 
@@ -54,13 +57,16 @@ EOF
 }
 
 main() {
-  while getopts ":coh" opt; do
+  while getopts ":cdxh" opt; do
     case "$opt" in
       c)
-        AI_BACKEND="claude"
+        ai_set_provider claude
         ;;
-      o)
-        AI_BACKEND="codex"
+      d)
+        ai_set_provider deepseek
+        ;;
+      x)
+        ai_set_provider codex
         ;;
       h)
         usage
@@ -75,7 +81,7 @@ main() {
   done
   shift $((OPTIND - 1))
 
-  require_ai_cmd
+  ai_require_provider
 
   local pm
   if ! pm=$(detect_package_manager); then
@@ -98,6 +104,7 @@ main() {
     log "Using package manager: ${pm}"
   fi
   log "Build command: ${BUILD_CMD}"
+  log "AI provider: $(ai_provider_name)"
 
   local round=1
   while [ "$round" -le "$MAX_ROUNDS" ]; do
@@ -117,7 +124,7 @@ main() {
     fi
 
     log "Build failed (exit ${build_status}); log saved to ${build_log}"
-    if ! launch_codex_fix "$build_log" "$build_status"; then
+    if ! launch_ai_fix "$build_log" "$build_status"; then
       die "${AI_BACKEND} buildfix failed."
     fi
 

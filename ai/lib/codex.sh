@@ -64,7 +64,7 @@ codex_stream_with_label() {
   local prefix="[$label]"
 
   if type log >/dev/null 2>&1; then
-    log "${prefix} starting"
+    log "${prefix} starting ($(ai_provider_name))"
   fi
 
   if ai_exec "$prompt" 2>&1 | awk -v p="${prefix} " '{print p $0}'; then
