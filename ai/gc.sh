@@ -59,6 +59,63 @@ maybe_clean_gc_log() {
     fi
 }
 
+# Maximum characters for diff content in prompts (leaves room for prompt text and response)
+# DeepSeek's limit is 131072 tokens; ~4 chars per token = ~500K chars, but we use 100K to be safe
+MAX_DIFF_CHARS="${MAX_DIFF_CHARS:-100000}"
+
+# When diff exceeds MAX_DIFF_CHARS, create a summarized version using git diff --stat
+# plus the first and last portions of the actual diff for context
+summarize_large_diff() {
+    local diff_content="$1"
+    local file_paths="$2"  # Space-separated list of paths, or empty for all staged
+
+    local diff_len=${#diff_content}
+    if [ "$diff_len" -le "$MAX_DIFF_CHARS" ]; then
+        # Diff is small enough, return as-is
+        printf '%s' "$diff_content"
+        return 0
+    fi
+
+    log "Diff is too large ($diff_len chars > $MAX_DIFF_CHARS). Using summarized diff."
+
+    # Get the stat summary
+    local stat_output
+    if [ -n "$file_paths" ]; then
+        stat_output=$(git diff --cached --stat -- $file_paths 2>/dev/null || git diff --stat -- $file_paths 2>/dev/null || echo "")
+    else
+        stat_output=$(git diff --cached --stat 2>/dev/null || echo "")
+    fi
+
+    # Calculate how much of the actual diff we can include
+    # Reserve ~2000 chars for stat and explanatory text
+    local available_chars=$((MAX_DIFF_CHARS - 2000))
+    local half_available=$((available_chars / 2))
+
+    # Get first portion of diff (shows file headers and initial changes)
+    local head_content
+    head_content=$(printf '%s' "$diff_content" | head -c "$half_available")
+
+    # Get last portion of diff (shows final changes)
+    local tail_content
+    tail_content=$(printf '%s' "$diff_content" | tail -c "$half_available")
+
+    # Build summarized output
+    cat <<EOF
+[DIFF SUMMARY - Full diff too large ($diff_len chars), showing summary and samples]
+
+=== CHANGE STATISTICS ===
+$stat_output
+
+=== FIRST PORTION OF DIFF ===
+$head_content
+
+[... TRUNCATED ${diff_len} chars total ...]
+
+=== LAST PORTION OF DIFF ===
+$tail_content
+EOF
+}
+
 generate_commit_message_from_prompt() {
     local prompt="$1"
     local target_label="$2"
@@ -88,6 +145,10 @@ generate_commit_message() {
     local file_path="$1"
     local diff_content="$2"
 
+    # Summarize if diff is too large
+    local processed_diff
+    processed_diff=$(summarize_large_diff "$diff_content" "$file_path")
+
     local prompt
     prompt=$(cat <<EOF
 You are a senior engineer writing a single, conventional git commit subject for one file. Respond with a concise, imperative, <=65 character line that captures the main change. Do not include quotes, backticks, or additional commentary.
@@ -97,7 +158,7 @@ File: $file_path
 
 Here is the staged git diff for this file:
 ---
-$diff_content
+$processed_diff
 ---
 
 Return only the commit subject line.
@@ -110,6 +171,10 @@ EOF
 generate_combined_commit_message() {
     local diff_content="$1"
 
+    # Summarize if diff is too large (pass empty string for file_paths to use all staged)
+    local processed_diff
+    processed_diff=$(summarize_large_diff "$diff_content" "")
+
     local prompt
     prompt=$(cat <<EOF
 You are a senior engineer writing a single, conventional git commit subject for the staged changes in this repository. Respond with a concise, imperative, <=65 character line that captures the main change. Do not include quotes, backticks, or additional commentary.
@@ -118,7 +183,7 @@ Repository path: $(pwd)
 
 Here is the staged git diff for all staged changes:
 ---
-$diff_content
+$processed_diff
 ---
 
 Return only the commit subject line.
