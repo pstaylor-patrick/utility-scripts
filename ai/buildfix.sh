@@ -12,6 +12,13 @@ LOCKFILE_DIR=""
 MAX_ROUNDS=3
 BUILD_CMD=""
 
+usage() {
+    echo "Usage: $(basename "$0") [-c] [-o] [-h]"
+    echo "  -c  use Claude Code CLI for AI operations"
+    echo "  -o  use OpenAI Codex for AI operations (default)"
+    echo "  -h  show this help message"
+}
+
 build_script_name() {
   find_package_script "build" "build:ci"
 }
@@ -38,16 +45,37 @@ Use the build log to identify the failing code and apply changes in the workspac
 EOF
 )
 
-  log "[buildfix] sending build log to Codex"
-  if codex exec "$prompt"; then
-    log "[buildfix] Codex edits applied"
+  log "[buildfix] sending build log to ${AI_BACKEND}"
+  if ai_exec "$prompt"; then
+    log "[buildfix] ${AI_BACKEND} edits applied"
   else
     return 1
   fi
 }
 
 main() {
-  require_cmd codex
+  while getopts ":coh" opt; do
+    case "$opt" in
+      c)
+        AI_BACKEND="claude"
+        ;;
+      o)
+        AI_BACKEND="codex"
+        ;;
+      h)
+        usage
+        exit 0
+        ;;
+      \?)
+        echo "Invalid option: -$OPTARG" >&2
+        usage >&2
+        exit 1
+        ;;
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  require_ai_cmd
 
   local pm
   if ! pm=$(detect_package_manager); then
@@ -63,6 +91,7 @@ main() {
     die "Failed to build build command."
   fi
 
+  log "Using AI backend: ${AI_BACKEND}"
   if [ -n "$LOCKFILE_DIR" ] && [ "$LOCKFILE_DIR" != "$PWD" ]; then
     log "Using package manager: ${pm} (lockfile at ${LOCKFILE_DIR})"
   else
@@ -89,7 +118,7 @@ main() {
 
     log "Build failed (exit ${build_status}); log saved to ${build_log}"
     if ! launch_codex_fix "$build_log" "$build_status"; then
-      die "Codex buildfix failed."
+      die "${AI_BACKEND} buildfix failed."
     fi
 
     if [ "$round" -eq "$MAX_ROUNDS" ]; then
