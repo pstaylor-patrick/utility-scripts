@@ -5,6 +5,11 @@ set -euo pipefail
 # Commit every pending file in the current git repository with an AI-generated
 # message derived from the file's staged diff. Designed to be invoked from
 # any repo (e.g., alias `gc=~/src/pstaylor-patrick/utility-scripts/ai/gc.sh`).
+#
+# Supports OpenAI Codex (default) or Claude Code CLI for message generation.
+
+# AI backend: "codex" (default) or "claude"
+AI_BACKEND="codex"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >&2
@@ -57,9 +62,16 @@ generate_commit_message_from_prompt() {
     local prompt="$1"
     local target_label="$2"
     local raw_message
-    if ! raw_message=$(codex exec "$prompt"); then
-        log "Error: Failed to call codex for $target_label"
-        return 1
+    if [ "$AI_BACKEND" = "claude" ]; then
+        if ! raw_message=$(claude -p "$prompt"); then
+            log "Error: Failed to call claude for $target_label"
+            return 1
+        fi
+    else
+        if ! raw_message=$(codex exec "$prompt"); then
+            log "Error: Failed to call codex for $target_label"
+            return 1
+        fi
     fi
 
     local cleaned
@@ -241,14 +253,22 @@ process_entry() {
 main() {
     local single_commit=0
 
-    while getopts ":1h" opt; do
+    while getopts ":1coh" opt; do
         case "$opt" in
             1)
                 single_commit=1
                 ;;
+            c)
+                AI_BACKEND="claude"
+                ;;
+            o)
+                AI_BACKEND="codex"
+                ;;
             h)
-                echo "Usage: $(basename "$0") [-1]"
+                echo "Usage: $(basename "$0") [-1] [-c] [-o]"
                 echo "  -1  stage and commit all changes in a single commit"
+                echo "  -c  use Claude Code CLI for commit message generation"
+                echo "  -o  use OpenAI Codex for commit message generation (default)"
                 exit 0
                 ;;
             \?)
@@ -260,12 +280,17 @@ main() {
     shift $((OPTIND - 1))
 
     require_cmd git
-    require_cmd codex
+    if [ "$AI_BACKEND" = "claude" ]; then
+        require_cmd claude
+    else
+        require_cmd codex
+    fi
     require_cmd npx
     ensure_git_repo
     enter_repo_root
     maybe_clean_gc_log
 
+    log "Using AI backend: $AI_BACKEND"
     log "Initial git status:"
     git status
 
