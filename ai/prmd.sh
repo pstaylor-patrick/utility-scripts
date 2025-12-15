@@ -1,30 +1,24 @@
 #!/usr/bin/env bash
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ai/lib/provider.sh
+. "${SCRIPT_DIR}/lib/provider.sh"
+
 DEFAULT_PULL_REQUEST_TEMPLATE="$HOME/src/pstaylor-patrick/utility-scripts/ai/prmd/pull_request_template.md"
 COMMAND_NAME="prmd"
 
-# AI backend: "codex" (default) or "claude"
-AI_BACKEND="codex"
-
-ai_exec() {
-  local prompt="$1"
-  if [ "$AI_BACKEND" = "claude" ]; then
-    claude -p "$prompt"
-  else
-    codex exec "$prompt"
-  fi
-}
 
 usage() {
     cat <<EOF
-Usage: $0 [-c] [-o] [--stat] <base-branch>
+Usage: $0 [-c] [-d] [-x] [--stat] <base-branch>
 
 Options:
-  -c                        Use Claude Code CLI for AI operations.
-  -o                        Use OpenAI Codex for AI operations (default).
+  -c, --claude              Use Claude Code CLI for AI operations.
+  -d, --deepseek            Use DeepSeek API for AI operations.
+  -x, --codex               Use OpenAI Codex for AI operations (default).
   --completion [bash|zsh]   Print shell completion script for ${COMMAND_NAME}.
   --stat                    Use git diff --stat summary only.
-  --help                    Show this help message.
+  -h, --help                Show this help message.
 EOF
 }
 
@@ -77,9 +71,9 @@ _${COMMAND_NAME}_complete() {
 
     if [[ "\$cur" == --* ]]; then
         if type mapfile >/dev/null 2>&1; then
-            mapfile -t COMPREPLY < <(compgen -W "--stat --completion --help -h" -- "\$cur")
+            mapfile -t COMPREPLY < <(compgen -W "--stat --completion --help -h -c -d -x" -- "\$cur")
         else
-            IFS=\$'\n' COMPREPLY=(\$(compgen -W "--stat --completion --help -h" -- "\$cur"))
+            IFS=\$'\n' COMPREPLY=(\$(compgen -W "--stat --completion --help -h -c -d -x" -- "\$cur"))
         fi
         return
     fi
@@ -125,6 +119,9 @@ _${cmd}_complete() {
         '(-h --help)'{-h,--help}'[show help]' \\
         '--stat[use git diff --stat summary]' \\
         '--completion[print shell completion script]:shell:(bash zsh)' \\
+        '-c[use Claude Code]' \\
+        '-d[use DeepSeek API]' \\
+        '-x[use OpenAI Codex]' \\
         '*:branch:_${cmd}_branch_completions'
 }
 
@@ -185,11 +182,11 @@ ensure_title_placeholder() {
     fi
 }
 
-# Normalize Codex responses to just the PR body (no preamble or fences)
-clean_codex_output() {
+# Normalize AI responses to just the PR body (no preamble or fences)
+clean_ai_output() {
     local raw_output="$1"
 
-    # Strip separators and code fences Codex sometimes wraps responses with
+    # Strip separators and code fences AI sometimes wraps responses with
     local cleaned_output
     cleaned_output=$(printf "%s\n" "$raw_output" | sed '/^---$/d' | sed '/^```[[:alnum:]]*[[:space:]]*$/d')
 
@@ -274,7 +271,7 @@ clean_codex_output() {
     echo "$cleaned_output"
 }
 
-run_codex_prompt() {
+run_ai_prompt() {
     local prompt="$1"
     local context="${2:-ai}"
     local output
@@ -284,21 +281,21 @@ run_codex_prompt() {
         return 1
     fi
 
-    clean_codex_output "$output"
+    clean_ai_output "$output"
 }
 
 # File locking function for safe concurrent writes (macOS compatible)
 safe_file_update() {
     local content="$1"
     local lock_file="/tmp/prmd.lock"
-    
+
     # macOS-compatible file locking using mkdir (atomic operation)
     while ! mkdir "$lock_file.lock" 2>/dev/null; do
         sleep 0.1
     done
-    
+
     echo "$content" > ./pr.md
-    
+
     # Cleanup lock
     rmdir "$lock_file.lock" 2>/dev/null
 }
@@ -312,7 +309,7 @@ process_single_chunk() {
 
     local chunk_content
     chunk_content=$(cat "$chunk_file")
-    
+
     local prompt
     prompt=$(cat <<EOF
 You are a senior software engineer extending a pull request description. You have an existing PR description that was generated from previous chunks of a git diff. Your task is to update and extend this PR description with additional context from a new chunk of the diff. Adhere strictly to the following rules:
@@ -340,7 +337,7 @@ EOF
 )
 
     local cleaned_content
-    if ! cleaned_content=$(run_codex_prompt "$prompt" "processing chunk $chunk_num/$total_chunks"); then
+    if ! cleaned_content=$(run_ai_prompt "$prompt" "processing chunk $chunk_num/$total_chunks"); then
         echo "Error: Failed to call ${AI_BACKEND} for chunk $chunk_num" >&2
         return 1
     fi
@@ -354,10 +351,10 @@ EOF
 integrate_chunk_analysis() {
     local chunk_analysis_file="$1"
     local chunk_num="$2"
-    
+
     local chunk_analysis=$(cat "$chunk_analysis_file")
     local current_pr_content=$(cat ./pr.md)
-    
+
     local prompt
     prompt=$(cat <<EOF
 You are a senior software engineer integrating multiple PR description analyses. Your task is to merge the analysis from a new chunk with the existing PR description. Adhere strictly to the following rules:
@@ -385,11 +382,11 @@ EOF
 )
 
     local cleaned_content
-    if ! cleaned_content=$(run_codex_prompt "$prompt" "integrating chunk $chunk_num"); then
+    if ! cleaned_content=$(run_ai_prompt "$prompt" "integrating chunk $chunk_num"); then
         echo "Error: Failed to call ${AI_BACKEND} for integration" >&2
         return 1
     fi
-    
+
     # Save updated content using safe file update
     safe_file_update "$cleaned_content"
     log "Integrated analysis from chunk $chunk_num"
@@ -400,16 +397,16 @@ EOF
 process_chunks_parallel() {
     local temp_dir="$1"
     local total_chunks="$2"
-    
+
     log "Processing $total_chunks chunks in parallel with $PARALLEL_JOBS jobs"
-    
+
     # Create temporary directory for chunk analyses
     local analysis_dir=$(mktemp -d)
-    
+
     # Process chunks in parallel
     local pids=()
     local chunk_status=()  # Track which chunks are being processed
-    
+
     for ((i=0; i<total_chunks; i++)); do
         # Wait if we've reached the maximum parallel jobs
         while [ ${#pids[@]} -ge $PARALLEL_JOBS ]; do
@@ -427,7 +424,7 @@ process_chunks_parallel() {
             chunk_status=("${chunk_status[@]}")
             sleep 0.1
         done
-        
+
         # Process chunk in background
         (
             local output_file="$analysis_dir/chunk_$i.analysis.md"
@@ -440,23 +437,23 @@ process_chunks_parallel() {
         pids+=($!)
         chunk_status+=($i)  # Track which chunk this PID corresponds to
     done
-    
+
     # Wait for all background processes to complete
     wait
-    
+
     # Log completion of any remaining chunks
     for ((i=0; i<total_chunks; i++)); do
         if [ -f "$analysis_dir/chunk_$i.done" ]; then
             log "Completed processing chunk $((i+1)) of $total_chunks"
         fi
     done
-    
+
     # Check for any failed chunks
     local failed_chunks=$(find "$analysis_dir" -name "*.failed" | wc -l)
     if [ "$failed_chunks" -gt 0 ]; then
         log "Warning: $failed_chunks chunks failed to process"
     fi
-    
+
     # Integrate analyses sequentially in correct order
     for ((i=0; i<total_chunks; i++)); do
         local analysis_file="$analysis_dir/chunk_$i.analysis.md"
@@ -467,7 +464,7 @@ process_chunks_parallel() {
             fi
         fi
     done
-    
+
     # Cleanup analysis directory
     rm -rf "$analysis_dir"
     log "Completed parallel processing of $total_chunks chunks"
@@ -486,7 +483,7 @@ get_template_path() {
 get_diff_content() {
     local base_branch="$1"
     local use_stat="$2"
-    
+
     if [ "$use_stat" = "true" ]; then
         git --no-pager diff --stat "$base_branch"
     else
@@ -498,41 +495,41 @@ chunk_diff() {
     local diff_content="$1"
     local chunk_size="$2"
     local overlap_size="$3"
-    
+
     # Create temporary directory for chunks
     local temp_dir=$(mktemp -d)
     local chunk_count=0
     local content_length=${#diff_content}
     local start_pos=0
-    
+
     log "Diff content size: $content_length characters"
     log "Chunking into ~$chunk_size character segments with $overlap_size character overlap"
-    
+
     while [ $start_pos -lt $content_length ]; do
         local end_pos=$((start_pos + chunk_size))
-        
+
         # Don't go beyond the content length
         if [ $end_pos -gt $content_length ]; then
             end_pos=$content_length
         fi
-        
+
         # Extract chunk
         local chunk="${diff_content:$start_pos:$((end_pos - start_pos))}"
-        
+
         # Save chunk to file
         echo "$chunk" > "$temp_dir/chunk_$chunk_count.txt"
-        
+
         chunk_count=$((chunk_count + 1))
-        
+
         # Move start position, accounting for overlap
         start_pos=$((end_pos - overlap_size))
-        
+
         # If we're at the end, break
         if [ $end_pos -eq $content_length ]; then
             break
         fi
     done
-    
+
     echo "$temp_dir:$chunk_count"
 }
 
@@ -543,7 +540,7 @@ generate_initial_pr_md() {
 
     local pr_content=$(cat ./pr.md)
     local prompt
-    
+
     if [ "$is_chunked" = "true" ]; then
         prompt=$(cat <<EOF
 You are a senior software engineer writing a pull request description. Your task is to complete a PR description template using a full git diff. This is the FIRST CHUNK of a larger diff that will be processed in multiple parts. Adhere strictly to the following rules:
@@ -595,13 +592,13 @@ Note: This is a statistical summary showing files changed and line counts. Gener
 EOF
 )
     fi
-    
+
     local cleaned_content
-    if ! cleaned_content=$(run_codex_prompt "$prompt" "building initial PR description"); then
+    if ! cleaned_content=$(run_ai_prompt "$prompt" "building initial PR description"); then
         echo "Error: Failed to call ${AI_BACKEND} for initial PR description." >&2
         exit 1
     fi
-    
+
     # Save generated content to pr.md
     echo "$cleaned_content" > ./pr.md
     echo "$cleaned_content"
@@ -622,7 +619,7 @@ extend_pr_md_batch() {
     local total_chunks="$4"
 
     local current_pr_content=$(cat ./pr.md)
-    
+
     # Combine multiple chunks into a single request
     local combined_chunks=""
     local total_chunk_size=0
@@ -631,7 +628,7 @@ extend_pr_md_batch() {
         combined_chunks="$combined_chunks\n\n--- CHUNK $((i+1)) of $total_chunks ---\n$chunk_content"
         total_chunk_size=$((total_chunk_size + ${#chunk_content}))
     done
-    
+
     local prompt
     prompt=$(cat <<EOF
 You are a senior software engineer extending a pull request description. You have an existing PR description and multiple chunks of a git diff to process. Your task is to update and extend this PR description with additional context from ALL the provided diff chunks. Adhere strictly to the following rules:
@@ -655,16 +652,16 @@ $combined_chunks
 Please update and extend the PR description to incorporate the new information from all these chunks while maintaining the existing structure and content.
 EOF
 )
-    
+
     # Estimate total token usage
     local total_estimated_tokens=$(estimate_tokens "$prompt")
-    
+
     local max_tokens=120000
     local safety_margin=5000  # 5k token safety margin
-    
+
     if [ $total_estimated_tokens -gt $((max_tokens - safety_margin)) ]; then
         log "Warning: Estimated token count ($total_estimated_tokens) approaches the token budget. Processing chunks individually."
-        
+
         # Process chunks one by one instead of in batch
         for ((i=start_chunk; i<=end_chunk; i++)); do
             local chunk_content=$(cat "$temp_dir/chunk_$i.txt")
@@ -672,13 +669,13 @@ EOF
         done
         return
     fi
-    
+
     local cleaned_content
-    if ! cleaned_content=$(run_codex_prompt "$prompt" "extending chunks $((start_chunk+1))-$((end_chunk+1))"); then
+    if ! cleaned_content=$(run_ai_prompt "$prompt" "extending chunks $((start_chunk+1))-$((end_chunk+1))"); then
         echo "Error: Failed to call ${AI_BACKEND} for chunks $((start_chunk+1))-$((end_chunk+1))" >&2
         exit 1
     fi
-    
+
     # Save updated content to pr.md
     echo "$cleaned_content" > ./pr.md
     log "Extended PR description with chunks $((start_chunk+1))-$((end_chunk+1)) of $total_chunks"
@@ -689,7 +686,7 @@ extend_pr_md() {
     local chunk_number="$2"
     local total_chunks="$3"
     local current_pr_content=$(cat ./pr.md)
-    
+
     local prompt
     prompt=$(cat <<EOF
 You are a senior software engineer extending a pull request description. You have an existing PR description that was generated from previous chunks of a git diff. Your task is to update and extend this PR description with additional context from a new chunk of the diff. Adhere strictly to the following rules:
@@ -717,11 +714,11 @@ EOF
 )
 
     local cleaned_content
-    if ! cleaned_content=$(run_codex_prompt "$prompt" "extending chunk $chunk_number/$total_chunks"); then
+    if ! cleaned_content=$(run_ai_prompt "$prompt" "extending chunk $chunk_number/$total_chunks"); then
         echo "Error: Failed to call ${AI_BACKEND} for chunk $chunk_number" >&2
         exit 1
     fi
-    
+
     # Save updated content to pr.md
     echo "$cleaned_content" > ./pr.md
     log "Extended PR description with chunk $chunk_number of $total_chunks"
@@ -736,10 +733,10 @@ generate_pr_md_fast() {
         echo "Error: No differences found against branch $base_branch"
         return 1
     fi
-    
+
     local diff_size=${#full_diff_content}
     log "Full diff size: $diff_size characters"
-    
+
     local pr_content=$(cat ./pr.md)
     local prompt
     prompt=$(cat <<EOF
@@ -766,25 +763,25 @@ $full_diff_content
 Generate a complete PR description based on the entire diff in a single response.
 EOF
 )
-    
+
     # Estimate token usage for safety check
     local total_estimated_tokens=$(estimate_tokens "$prompt")
-    
+
     local max_tokens=120000
     local safety_margin=10000  # 10k token safety margin for fast mode
-    
+
     if [ $total_estimated_tokens -gt $((max_tokens - safety_margin)) ]; then
         log "Warning: Fast mode would exceed token budget (estimated: $total_estimated_tokens tokens)"
         log "Falling back to standard two-phase processing for safety"
         return 1
     fi
-    
+
     local cleaned_content
-    if ! cleaned_content=$(run_codex_prompt "$prompt" "fast mode PR description"); then
+    if ! cleaned_content=$(run_ai_prompt "$prompt" "fast mode PR description"); then
         echo "Error: Failed to call ${AI_BACKEND} in fast mode" >&2
         return 1
     fi
-    
+
     # Save generated content to pr.md
     echo "$cleaned_content" > ./pr.md
     log "Fast mode: Generated complete PR description in single ${AI_BACKEND} call"
@@ -794,7 +791,7 @@ EOF
 generate_pr_md() {
     local base_branch="$1"
     local use_stat_only="$2"
-    
+
     # Phase 1: Generate initial PR description using diff --stat
     log "Phase 1: Generating initial PR description using diff --stat summary"
     local stat_content=$(git --no-pager diff --stat "$base_branch")
@@ -802,52 +799,52 @@ generate_pr_md() {
         echo "Error: No differences found against branch $base_branch"
         exit 1
     fi
-    
+
     log "Stat summary size: ${#stat_content} characters"
     generate_initial_pr_md "$stat_content" "false" ""
-    
+
     # If --stat flag was provided, stop here
     if [ "$use_stat_only" = "true" ]; then
         log "Using --stat flag, skipping full diff processing"
         return
     fi
-    
+
     # Phase 2: Get full diff and extend PR description with detailed changes
     log "Phase 2: Extending PR description with full diff details"
     local full_diff_content=$(git --no-pager diff "$base_branch")
     local diff_size=${#full_diff_content}
-    
+
     log "Full diff size: $diff_size characters"
-    
+
     # Check if we need to chunk the full diff
     if [ $diff_size -gt $MAX_CHUNK_SIZE ]; then
         log "Full diff exceeds maximum chunk size ($MAX_CHUNK_SIZE chars), falling back to --stat summary only"
         log "Skipping full diff extension to avoid chunking per configuration"
         return
     fi
-    
+
     log "Full diff size is within limits, processing as single extension"
     extend_pr_md "$full_diff_content" "1" "1"
 }
 
 refine_pr_md_with_git_log() {
     local base_branch="$1"
-    
+
     log "Running secondary refinement using git log against $base_branch"
-    
+
     local git_log_output
     if ! git_log_output=$(git --no-pager log "$base_branch"..HEAD); then
         log "Failed to retrieve git log for $base_branch..HEAD, skipping refinement step"
         return
     fi
-    
+
     if [ -z "$git_log_output" ]; then
         log "No commits found between $base_branch and current HEAD, skipping refinement step"
         return
     fi
 
     local refined="false"
-    
+
     local pr_content=$(cat ./pr.md)
     local prompt
     prompt=$(cat <<EOF
@@ -875,14 +872,14 @@ EOF
 )
 
     local refined_content
-    if refined_content=$(run_codex_prompt "$prompt" "refining with git log"); then
+    if refined_content=$(run_ai_prompt "$prompt" "refining with git log"); then
         echo "$refined_content" > ./pr.md
         refined="true"
         log "Refinement step complete"
     else
         log "Error: ${AI_BACKEND} refinement step failed"
     fi
-    
+
     if [ "$refined" != "true" ]; then
         log "Refinement step skipped or failed; keeping existing PR description content"
     fi
@@ -898,12 +895,6 @@ main() {
                 usage
                 exit 0
                 ;;
-            -c)
-                AI_BACKEND="claude"
-                ;;
-            -o)
-                AI_BACKEND="codex"
-                ;;
             --completion)
                 print_completion_script "${2:-}"
                 exit 0
@@ -911,7 +902,21 @@ main() {
             --stat)
                 use_stat="true"
                 ;;
+            -c|--claude)
+                ai_set_provider claude
+                ;;
+            -d|--deepseek)
+                ai_set_provider deepseek
+                ;;
+            -x|--codex)
+                ai_set_provider codex
+                ;;
             --*)
+                echo "Error: unknown option '$1'." >&2
+                usage >&2
+                exit 1
+                ;;
+            -*)
                 echo "Error: unknown option '$1'." >&2
                 usage >&2
                 exit 1
@@ -935,21 +940,18 @@ main() {
     fi
 
     require_cmd git
-    if [ "$AI_BACKEND" = "claude" ]; then
-        require_cmd claude
-    else
-        require_cmd codex
-    fi
-    
+    ai_require_provider
+
     # Check for flags
     if [ "$use_stat" = "true" ]; then
         log "Using statistical diff summary only (--stat flag provided)"
     else
         log "Using optimized approach: try full diff first, fall back if needed"
     fi
-    
+
+    log "AI provider: $(ai_provider_name)"
     log "Starting PR description generation against $base_branch..."
-    
+
     # Determine which template to use
     local template_path=$(get_template_path)
     if [ "$template_path" = "./.github/pull_request_template.md" ]; then
@@ -969,14 +971,14 @@ main() {
             generate_pr_md "$base_branch" "false"
         fi
     fi
-    
+
     refine_pr_md_with_git_log "$base_branch"
 }
 
 # Wrap main execution to ensure cleanup
 {
     main "$@"
-    
+
     # Copy the PR description to clipboard
     log "Copying PR description to clipboard..."
     pbcopy < ./pr.md
@@ -984,9 +986,9 @@ main() {
     # Open the generated PR description in VS Code for quick review/editing
     log "Opening PR description in VS Code..."
     code ./pr.md
-    
+
     # Print the PR description to stdout
     cat ./pr.md
-    
+
     log "PR description generation complete"
 }
