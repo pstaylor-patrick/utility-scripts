@@ -17,6 +17,13 @@ ISSUE_TOTAL=0
 LOCKFILE_DIR=""
 MAX_ROUNDS=3
 
+usage() {
+    echo "Usage: $(basename "$0") [-c] [-o] [-h]"
+    echo "  -c  use Claude Code CLI for AI operations"
+    echo "  -o  use OpenAI Codex for AI operations (default)"
+    echo "  -h  show this help message"
+}
+
 typecheck_command_for() {
   local pm="$1"
   local script_name="$2"
@@ -129,7 +136,28 @@ EOF
 }
 
 main() {
-    require_cmd codex
+    while getopts ":coh" opt; do
+        case "$opt" in
+            c)
+                AI_BACKEND="claude"
+                ;;
+            o)
+                AI_BACKEND="codex"
+                ;;
+            h)
+                usage
+                exit 0
+                ;;
+            \?)
+                echo "Invalid option: -$OPTARG" >&2
+                usage >&2
+                exit 1
+                ;;
+        esac
+    done
+    shift $((OPTIND - 1))
+
+    require_ai_cmd
 
     local pm
     if ! pm=$(detect_package_manager); then
@@ -146,6 +174,7 @@ main() {
         die "Failed to build typecheck command."
     fi
 
+    log "Using AI backend: ${AI_BACKEND}"
     if [ -n "$LOCKFILE_DIR" ] && [ "$LOCKFILE_DIR" != "$PWD" ]; then
         log "Using package manager: ${pm} (lockfile at ${LOCKFILE_DIR})"
     else
@@ -183,7 +212,7 @@ main() {
             exit "$type_status"
         fi
 
-        log "Launching ${file_count} codex worker(s) in parallel for ${ISSUE_TOTAL} issue(s)."
+        log "Launching ${file_count} ${AI_BACKEND} worker(s) in parallel for ${ISSUE_TOTAL} issue(s)."
 
         for idx in "${!FILE_KEYS[@]}"; do
             local file_path="${FILE_KEYS[$idx]}"
@@ -199,7 +228,7 @@ main() {
         done
 
         if [ "$failures" -gt 0 ]; then
-            die "${failures} codex job(s) failed."
+            die "${failures} ${AI_BACKEND} job(s) failed."
         fi
 
         if [ "$round" -eq "$MAX_ROUNDS" ]; then

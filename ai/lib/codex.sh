@@ -1,5 +1,28 @@
 #!/usr/bin/env bash
 
+# AI backend: "codex" (default) or "claude"
+# Scripts can set this before sourcing or via -c/-o flags
+AI_BACKEND="${AI_BACKEND:-codex}"
+
+# Execute a prompt using the configured AI backend
+ai_exec() {
+  local prompt="$1"
+  if [ "$AI_BACKEND" = "claude" ]; then
+    claude -p "$prompt"
+  else
+    codex exec "$prompt"
+  fi
+}
+
+# Require the appropriate CLI based on AI_BACKEND
+require_ai_cmd() {
+  if [ "$AI_BACKEND" = "claude" ]; then
+    require_cmd claude
+  else
+    require_cmd codex
+  fi
+}
+
 codex_clean_label() {
   local label="$1"
   local max_len="${2:-50}"
@@ -22,7 +45,7 @@ codex_label_from_prompt() {
   local max_len="${3:-50}"
 
   local label=""
-  if label=$(codex exec "$prompt" 2>/dev/null); then
+  if label=$(ai_exec "$prompt" 2>/dev/null); then
     label=$(printf "%s" "$label" | sed '/^```.*$/d; /^---$/d' | head -n1 | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
   else
     label=""
@@ -44,7 +67,7 @@ codex_stream_with_label() {
     log "${prefix} starting"
   fi
 
-  if codex exec "$prompt" 2>&1 | awk -v p="${prefix} " '{print p $0}'; then
+  if ai_exec "$prompt" 2>&1 | awk -v p="${prefix} " '{print p $0}'; then
     if type log >/dev/null 2>&1; then
       log "${prefix} completed"
     fi
