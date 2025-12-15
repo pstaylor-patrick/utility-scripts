@@ -17,6 +17,13 @@ TEST_CMD=""
 LOCKFILE_DIR=""
 MAX_ROUNDS=3
 
+usage() {
+    echo "Usage: $(basename "$0") [-c] [-o] [-h]"
+    echo "  -c  use Claude Code CLI for AI operations"
+    echo "  -o  use OpenAI Codex for AI operations (default)"
+    echo "  -h  show this help message"
+}
+
 test_script_name() {
   find_package_script "test" "test:ci" "test:unit"
 }
@@ -69,7 +76,7 @@ EOF
 )
 
     local output
-    if ! output=$(codex exec "$prompt" 2>/dev/null); then
+    if ! output=$(ai_exec "$prompt" 2>/dev/null); then
         return 1
     fi
 
@@ -85,7 +92,7 @@ EOF
     done <<< "$output"
 
     if [ "$added" -eq 0 ]; then
-        log "Codex did not return any failing file paths. Raw Codex output:"
+        log "${AI_BACKEND} did not return any failing file paths. Raw ${AI_BACKEND} output:"
         printf "%s\n" "$output" >&2
         return 1
     fi
@@ -160,15 +167,15 @@ EOF
 )
 
     local summary_header="# Test failure summary ($(date '+%Y-%m-%d %H:%M:%S'))"
-    local codex_out=""
-    if ! codex_out=$(codex exec "$prompt" 2>/dev/null); then
-        codex_out=""
+    local ai_out=""
+    if ! ai_out=$(ai_exec "$prompt" 2>/dev/null); then
+        ai_out=""
     fi
 
-    codex_out=$(printf "%s" "$codex_out" | sed '/^```/d; /^---$/d')
+    ai_out=$(printf "%s" "$ai_out" | sed '/^```/d; /^---$/d')
 
-    if [ -z "$(printf "%s" "$codex_out" | tr -d '[:space:]')" ]; then
-        log "Codex summary failed; falling back to file list."
+    if [ -z "$(printf "%s" "$ai_out" | tr -d '[:space:]')" ]; then
+        log "${AI_BACKEND} summary failed; falling back to file list."
         local files
         files=$(grep -E '^ FAIL ' "$log_file" | awk '{print $2}' | sort -u)
         local fallback=""
@@ -180,11 +187,32 @@ EOF
         return 0
     fi
 
-    printf "%s\n\n%s\n" "$summary_header" "$codex_out"
+    printf "%s\n\n%s\n" "$summary_header" "$ai_out"
 }
 
 main() {
-    require_cmd codex
+    while getopts ":coh" opt; do
+        case "$opt" in
+            c)
+                AI_BACKEND="claude"
+                ;;
+            o)
+                AI_BACKEND="codex"
+                ;;
+            h)
+                usage
+                exit 0
+                ;;
+            \?)
+                echo "Invalid option: -$OPTARG" >&2
+                usage >&2
+                exit 1
+                ;;
+        esac
+    done
+    shift $((OPTIND - 1))
+
+    require_ai_cmd
 
     local pm
     if ! pm=$(detect_package_manager); then
@@ -200,6 +228,7 @@ main() {
         die "Failed to build test command."
     fi
 
+    log "Using AI backend: ${AI_BACKEND}"
     if [ -n "$LOCKFILE_DIR" ] && [ "$LOCKFILE_DIR" != "$PWD" ]; then
         log "Using package manager: ${pm} (lockfile at ${LOCKFILE_DIR})"
     else
@@ -229,9 +258,9 @@ main() {
             exit 0
         fi
 
-        # Identify failing files (prefer Codex, then fallback parse)
+        # Identify failing files (prefer AI, then fallback parse)
         if ! codex_extract_files "$test_log"; then
-            log "Codex-based failure detection returned no files; falling back to regex parsing."
+            log "${AI_BACKEND}-based failure detection returned no files; falling back to regex parsing."
         fi
         parse_fail_blocks "$test_log"
 
@@ -247,7 +276,7 @@ main() {
         printf "\n%s\n" "$summary"
         log "Raw test log: ${test_log}"
 
-        log "Launching ${file_count} codex worker(s) in parallel for ${ISSUE_TOTAL} failure section(s)."
+        log "Launching ${file_count} ${AI_BACKEND} worker(s) in parallel for ${ISSUE_TOTAL} failure section(s)."
         for idx in "${!FILE_KEYS[@]}"; do
             local file_path="${FILE_KEYS[$idx]}"
             local file_issues="${FILE_ISSUES[$idx]-}"
@@ -262,7 +291,7 @@ main() {
         done
 
         if [ "$failures" -gt 0 ]; then
-            die "${failures} codex job(s) failed."
+            die "${failures} ${AI_BACKEND} job(s) failed."
         fi
 
         if [ "$round" -eq "$MAX_ROUNDS" ]; then
