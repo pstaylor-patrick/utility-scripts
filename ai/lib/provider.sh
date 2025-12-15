@@ -16,32 +16,45 @@
 #   2. Command-line flag sets AI_PROVIDER before sourcing
 #   3. Default: codex
 
-# Load .env file if it exists (searches multiple locations)
+# Load .env files from multiple locations (all are checked, first value wins)
 _ai_load_env() {
-    local env_file=""
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-    # Priority: current dir > git root > script's parent dir (ai/) > script's grandparent (utility-scripts/)
+    # Collect all potential .env files (checked in priority order)
+    local env_files=()
+
+    # 1. Current directory
     if [ -f "./.env" ]; then
-        env_file="./.env"
-    elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        env_files+=("$(pwd)/.env")
+    fi
+
+    # 2. Git root of current repo (if in a git repo)
+    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         local git_root
         git_root=$(git rev-parse --show-toplevel 2>/dev/null)
         if [ -n "$git_root" ] && [ -f "${git_root}/.env" ]; then
-            env_file="${git_root}/.env"
+            local abs_git_env="${git_root}/.env"
+            # Avoid duplicates if current dir is git root
+            if [[ ! " ${env_files[*]} " =~ " ${abs_git_env} " ]]; then
+                env_files+=("$abs_git_env")
+            fi
         fi
     fi
 
-    # Fallback to script directory locations
-    if [ -z "$env_file" ] && [ -f "${script_dir}/../.env" ]; then
-        env_file="${script_dir}/../.env"
-    elif [ -z "$env_file" ] && [ -f "${script_dir}/../../.env" ]; then
-        env_file="${script_dir}/../../.env"
+    # 3. Script's parent dir (ai/)
+    if [ -f "${script_dir}/../.env" ]; then
+        env_files+=("${script_dir}/../.env")
     fi
 
-    if [ -n "$env_file" ] && [ -f "$env_file" ]; then
-        # Source the .env file, only exporting lines that look like VAR=value
+    # 4. Script's grandparent dir (utility-scripts/)
+    if [ -f "${script_dir}/../../.env" ]; then
+        env_files+=("${script_dir}/../../.env")
+    fi
+
+    # Load all .env files; existing vars are never overridden
+    local env_file
+    for env_file in "${env_files[@]}"; do
         while IFS= read -r line || [ -n "$line" ]; do
             # Skip comments and empty lines
             [[ "$line" =~ ^[[:space:]]*# ]] && continue
@@ -55,7 +68,7 @@ _ai_load_env() {
                 fi
             fi
         done < "$env_file"
-    fi
+    done
 }
 
 # Load environment variables from .env
