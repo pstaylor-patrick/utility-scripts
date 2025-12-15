@@ -3,11 +3,25 @@
 DEFAULT_PULL_REQUEST_TEMPLATE="$HOME/src/pstaylor-patrick/utility-scripts/ai/prmd/pull_request_template.md"
 COMMAND_NAME="prmd"
 
+# AI backend: "codex" (default) or "claude"
+AI_BACKEND="codex"
+
+ai_exec() {
+  local prompt="$1"
+  if [ "$AI_BACKEND" = "claude" ]; then
+    claude -p "$prompt"
+  else
+    codex exec "$prompt"
+  fi
+}
+
 usage() {
     cat <<EOF
-Usage: $0 [--stat] <base-branch>
+Usage: $0 [-c] [-o] [--stat] <base-branch>
 
 Options:
+  -c                        Use Claude Code CLI for AI operations.
+  -o                        Use OpenAI Codex for AI operations (default).
   --completion [bash|zsh]   Print shell completion script for ${COMMAND_NAME}.
   --stat                    Use git diff --stat summary only.
   --help                    Show this help message.
@@ -262,11 +276,11 @@ clean_codex_output() {
 
 run_codex_prompt() {
     local prompt="$1"
-    local context="${2:-codex}"
+    local context="${2:-ai}"
     local output
 
-    if ! output=$(codex exec "$prompt"); then
-        log "codex exec failed while ${context}"
+    if ! output=$(ai_exec "$prompt"); then
+        log "${AI_BACKEND} exec failed while ${context}"
         return 1
     fi
 
@@ -327,7 +341,7 @@ EOF
 
     local cleaned_content
     if ! cleaned_content=$(run_codex_prompt "$prompt" "processing chunk $chunk_num/$total_chunks"); then
-        echo "Error: Failed to call codex for chunk $chunk_num" >&2
+        echo "Error: Failed to call ${AI_BACKEND} for chunk $chunk_num" >&2
         return 1
     fi
 
@@ -372,7 +386,7 @@ EOF
 
     local cleaned_content
     if ! cleaned_content=$(run_codex_prompt "$prompt" "integrating chunk $chunk_num"); then
-        echo "Error: Failed to call codex for integration" >&2
+        echo "Error: Failed to call ${AI_BACKEND} for integration" >&2
         return 1
     fi
     
@@ -584,7 +598,7 @@ EOF
     
     local cleaned_content
     if ! cleaned_content=$(run_codex_prompt "$prompt" "building initial PR description"); then
-        echo "Error: Failed to call codex for initial PR description." >&2
+        echo "Error: Failed to call ${AI_BACKEND} for initial PR description." >&2
         exit 1
     fi
     
@@ -661,7 +675,7 @@ EOF
     
     local cleaned_content
     if ! cleaned_content=$(run_codex_prompt "$prompt" "extending chunks $((start_chunk+1))-$((end_chunk+1))"); then
-        echo "Error: Failed to call codex for chunks $((start_chunk+1))-$((end_chunk+1))" >&2
+        echo "Error: Failed to call ${AI_BACKEND} for chunks $((start_chunk+1))-$((end_chunk+1))" >&2
         exit 1
     fi
     
@@ -704,7 +718,7 @@ EOF
 
     local cleaned_content
     if ! cleaned_content=$(run_codex_prompt "$prompt" "extending chunk $chunk_number/$total_chunks"); then
-        echo "Error: Failed to call codex for chunk $chunk_number" >&2
+        echo "Error: Failed to call ${AI_BACKEND} for chunk $chunk_number" >&2
         exit 1
     fi
     
@@ -716,7 +730,7 @@ EOF
 generate_pr_md_fast() {
     local base_branch="$1"
     
-    log "Fast mode: Processing full diff in single codex call"
+    log "Fast mode: Processing full diff in single ${AI_BACKEND} call"
     local full_diff_content=$(git --no-pager diff "$base_branch")
     if [ -z "$full_diff_content" ]; then
         echo "Error: No differences found against branch $base_branch"
@@ -767,13 +781,13 @@ EOF
     
     local cleaned_content
     if ! cleaned_content=$(run_codex_prompt "$prompt" "fast mode PR description"); then
-        echo "Error: Failed to call codex in fast mode" >&2
+        echo "Error: Failed to call ${AI_BACKEND} in fast mode" >&2
         return 1
     fi
     
     # Save generated content to pr.md
     echo "$cleaned_content" > ./pr.md
-    log "Fast mode: Generated complete PR description in single codex call"
+    log "Fast mode: Generated complete PR description in single ${AI_BACKEND} call"
     return 0
 }
 
@@ -866,7 +880,7 @@ EOF
         refined="true"
         log "Refinement step complete"
     else
-        log "Error: codex refinement step failed"
+        log "Error: ${AI_BACKEND} refinement step failed"
     fi
     
     if [ "$refined" != "true" ]; then
@@ -883,6 +897,12 @@ main() {
             --help|-h)
                 usage
                 exit 0
+                ;;
+            -c)
+                AI_BACKEND="claude"
+                ;;
+            -o)
+                AI_BACKEND="codex"
                 ;;
             --completion)
                 print_completion_script "${2:-}"
@@ -915,7 +935,11 @@ main() {
     fi
 
     require_cmd git
-    require_cmd codex
+    if [ "$AI_BACKEND" = "claude" ]; then
+        require_cmd claude
+    else
+        require_cmd codex
+    fi
     
     # Check for flags
     if [ "$use_stat" = "true" ]; then
