@@ -2,27 +2,20 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ai/lib/provider.sh
+. "${SCRIPT_DIR}/lib/provider.sh"
+
 command_name="pra"
-
-# AI backend: "codex" (default) or "claude"
-AI_BACKEND="codex"
-
-ai_exec() {
-  local prompt="$1"
-  if [ "$AI_BACKEND" = "claude" ]; then
-    claude -p "$prompt"
-  else
-    codex exec "$prompt"
-  fi
-}
 
 usage() {
     cat <<EOF
-Usage: $0 [-c] [-o] [--fix] <base-branch>
+Usage: $0 [-c] [-d] [-x] [--fix] <base-branch>
 
 Options:
-  -c                        Use Claude Code CLI for AI operations.
-  -o                        Use OpenAI Codex for AI operations (default).
+  -c, --claude              Use Claude Code CLI for AI operations.
+  -d, --deepseek            Use DeepSeek API for AI operations.
+  -x, --codex               Use OpenAI Codex for AI operations (default).
   --completion [bash|zsh]   Print shell completion script for ${command_name}.
   --fix                     After generating the report, ask AI to apply the recommended improvements and show git status.
 EOF
@@ -107,12 +100,6 @@ while [[ "$#" -gt 0 ]]; do
             usage
             exit 0
             ;;
-        -c)
-            AI_BACKEND="claude"
-            ;;
-        -o)
-            AI_BACKEND="codex"
-            ;;
         --completion)
             print_completion_script "${2:-}"
             exit 0
@@ -120,7 +107,21 @@ while [[ "$#" -gt 0 ]]; do
         --fix)
             fix_mode=true
             ;;
+        -c|--claude)
+            ai_set_provider claude
+            ;;
+        -d|--deepseek)
+            ai_set_provider deepseek
+            ;;
+        -x|--codex)
+            ai_set_provider codex
+            ;;
         --*)
+            echo "Error: unknown option '$1'." >&2
+            usage >&2
+            exit 1
+            ;;
+        -*)
             echo "Error: unknown option '$1'." >&2
             usage >&2
             exit 1
@@ -143,22 +144,14 @@ if [ -z "$base_branch" ]; then
     exit 1
 fi
 
-if [ "$AI_BACKEND" = "claude" ]; then
-    if ! command -v claude >/dev/null 2>&1; then
-        echo "Error: claude CLI is not installed or not on PATH." >&2
-        exit 1
-    fi
-else
-    if ! command -v codex >/dev/null 2>&1; then
-        echo "Error: codex CLI is not installed or not on PATH." >&2
-        exit 1
-    fi
-fi
+ai_require_provider
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "Error: This script must be run inside a git repository." >&2
     exit 1
 fi
+
+echo "AI provider: $(ai_provider_name)" >&2
 
 diff_stat=$(git diff "$base_branch" --stat)
 commit_log=$(git log --oneline "${base_branch}"..HEAD)
