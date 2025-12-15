@@ -6,10 +6,11 @@ set -euo pipefail
 # message derived from the file's staged diff. Designed to be invoked from
 # any repo (e.g., alias `gc=~/src/pstaylor-patrick/utility-scripts/ai/gc.sh`).
 #
-# Supports OpenAI Codex (default) or Claude Code CLI for message generation.
+# Supports OpenAI Codex (default), Claude Code CLI, or DeepSeek API for message generation.
 
-# AI backend: "codex" (default) or "claude"
-AI_BACKEND="codex"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ai/lib/provider.sh
+. "${SCRIPT_DIR}/lib/provider.sh"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >&2
@@ -62,16 +63,9 @@ generate_commit_message_from_prompt() {
     local prompt="$1"
     local target_label="$2"
     local raw_message
-    if [ "$AI_BACKEND" = "claude" ]; then
-        if ! raw_message=$(claude -p "$prompt"); then
-            log "Error: Failed to call claude for $target_label"
-            return 1
-        fi
-    else
-        if ! raw_message=$(codex exec "$prompt"); then
-            log "Error: Failed to call codex for $target_label"
-            return 1
-        fi
+    if ! raw_message=$(ai_exec "$prompt"); then
+        log "Error: Failed to call $(ai_provider_name) for $target_label"
+        return 1
     fi
 
     local cleaned
@@ -250,29 +244,43 @@ process_entry() {
     git commit -m "$commit_message" -- "${commit_paths[@]}"
 }
 
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [-1] [-c|-d|-x] [-h]
+
+Commit pending git changes with AI-generated commit messages.
+
+Options:
+  -1            Stage and commit all changes in a single commit
+  -h            Show this help message
+$(ai_provider_usage)
+EOF
+}
+
 main() {
     local single_commit=0
 
-    while getopts ":1coh" opt; do
+    while getopts ":1cdxh" opt; do
         case "$opt" in
             1)
                 single_commit=1
                 ;;
             c)
-                AI_BACKEND="claude"
+                ai_set_provider claude
                 ;;
-            o)
-                AI_BACKEND="codex"
+            d)
+                ai_set_provider deepseek
+                ;;
+            x)
+                ai_set_provider codex
                 ;;
             h)
-                echo "Usage: $(basename "$0") [-1] [-c] [-o]"
-                echo "  -1  stage and commit all changes in a single commit"
-                echo "  -c  use Claude Code CLI for commit message generation"
-                echo "  -o  use OpenAI Codex for commit message generation (default)"
+                usage
                 exit 0
                 ;;
             \?)
                 echo "Invalid option: -$OPTARG" >&2
+                usage >&2
                 exit 1
                 ;;
         esac
@@ -280,17 +288,13 @@ main() {
     shift $((OPTIND - 1))
 
     require_cmd git
-    if [ "$AI_BACKEND" = "claude" ]; then
-        require_cmd claude
-    else
-        require_cmd codex
-    fi
+    ai_require_provider
     require_cmd npx
     ensure_git_repo
     enter_repo_root
     maybe_clean_gc_log
 
-    log "Using AI backend: $AI_BACKEND"
+    log "Using AI backend: $(ai_provider_name)"
     log "Initial git status:"
     git status
 
