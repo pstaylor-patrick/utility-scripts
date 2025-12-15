@@ -4,13 +4,27 @@ set -euo pipefail
 
 command_name="pra"
 
+# AI backend: "codex" (default) or "claude"
+AI_BACKEND="codex"
+
+ai_exec() {
+  local prompt="$1"
+  if [ "$AI_BACKEND" = "claude" ]; then
+    claude -p "$prompt"
+  else
+    codex exec "$prompt"
+  fi
+}
+
 usage() {
     cat <<EOF
-Usage: $0 [--fix] <base-branch>
+Usage: $0 [-c] [-o] [--fix] <base-branch>
 
 Options:
+  -c                        Use Claude Code CLI for AI operations.
+  -o                        Use OpenAI Codex for AI operations (default).
   --completion [bash|zsh]   Print shell completion script for ${command_name}.
-  --fix                     After generating the report, ask codex to apply the recommended improvements and show git status.
+  --fix                     After generating the report, ask AI to apply the recommended improvements and show git status.
 EOF
 }
 
@@ -93,6 +107,12 @@ while [[ "$#" -gt 0 ]]; do
             usage
             exit 0
             ;;
+        -c)
+            AI_BACKEND="claude"
+            ;;
+        -o)
+            AI_BACKEND="codex"
+            ;;
         --completion)
             print_completion_script "${2:-}"
             exit 0
@@ -123,9 +143,16 @@ if [ -z "$base_branch" ]; then
     exit 1
 fi
 
-if ! command -v codex >/dev/null 2>&1; then
-    echo "Error: codex CLI is not installed or not on PATH." >&2
-    exit 1
+if [ "$AI_BACKEND" = "claude" ]; then
+    if ! command -v claude >/dev/null 2>&1; then
+        echo "Error: claude CLI is not installed or not on PATH." >&2
+        exit 1
+    fi
+else
+    if ! command -v codex >/dev/null 2>&1; then
+        echo "Error: codex CLI is not installed or not on PATH." >&2
+        exit 1
+    fi
 fi
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -155,9 +182,9 @@ report_file=""
 if [ "$fix_mode" = true ]; then
     report_file=$(mktemp)
     trap '[[ -n "${report_file:-}" ]] && rm -f "$report_file"' EXIT
-    codex exec "${prompt}" | tee "$report_file"
+    ai_exec "${prompt}" | tee "$report_file"
 else
-    codex exec "${prompt}"
+    ai_exec "${prompt}"
 fi
 
 if [ "$fix_mode" = true ]; then
@@ -166,6 +193,6 @@ if [ "$fix_mode" = true ]; then
 Code quality report:
 $(cat "$report_file")"
 
-    codex exec "${improvement_prompt}"
+    ai_exec "${improvement_prompt}"
     git status -sb
 fi
