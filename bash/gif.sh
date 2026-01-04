@@ -24,24 +24,24 @@ fi
 
 # Check if an argument is provided
 if [ -z "$1" ]; then
-    echo "Usage: $0 <input_video_file> [low|mid|high]"
+    echo "Usage: $0 <input_video_file> [low|mid|high|all]"
     exit 1
 fi
 
 # Get the input file path
 input_file="$1"
 
-# Set default resolution to high
-resolution="high"
+# Set default resolution to all (renders low, mid, and high)
+resolution="all"
 
 # Check if a resolution flag is provided
 if [ ! -z "$2" ]; then
     case "$2" in
-        low|mid|high)
+        low|mid|high|all)
             resolution="$2"
             ;;
         *)
-            echo "Invalid resolution option. Use low, mid, or high."
+            echo "Invalid resolution option. Use low, mid, high, or all."
             exit 1
             ;;
     esac
@@ -51,22 +51,26 @@ fi
 output_dir=$(dirname "$input_file")
 output_base=$(basename "$input_file" | sed 's/\.[^.]*$//')
 
-# Construct the output file path
-if [ "$resolution" = "high" ] && [ -z "$2" ]; then
-    output_file="$output_dir/$output_base.gif"
-else
-    output_file="$output_dir/$output_base $resolution.gif"
-fi
-
 # Process based on resolution
 case "$resolution" in
     low)
+        output_file="$output_dir/$output_base low.gif"
         ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos" -c:v gif "$output_file"
         ;;
     mid)
+        output_file="$output_dir/$output_base mid.gif"
         ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" "$output_file"
         ;;
     high)
+        output_file="$output_dir/$output_base high.gif"
         ffmpeg -y -i "$input_file" -vf "fps=15,scale=800:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" "$output_file"
+        ;;
+    all)
+        echo "Rendering low resolution..."
+        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos" -c:v gif "$output_dir/$output_base low.gif"
+        echo "Rendering mid resolution..."
+        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" "$output_dir/$output_base mid.gif"
+        echo "Rendering high resolution..."
+        ffmpeg -y -i "$input_file" -vf "fps=15,scale=800:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" "$output_dir/$output_base high.gif"
         ;;
 esac

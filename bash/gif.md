@@ -1,9 +1,10 @@
-# 🎨 "New" Tool for GIFs 
+# 🎨 "New" Tool for GIFs
+
 https://github.com/pstaylor-patrick/utility-scripts/blob/master/gif.sh
 
 Got GIFs? Sure, you could search GIPHY. But what about making your own?
 
-I wrote a bash script that takes MP4 video and converts to GIF with configurable low, mid, or high resolution.
+I wrote a bash script that takes MP4 video and converts to GIF. By default it renders all three resolution variants (low, mid, high), or you can specify a single resolution.
 
 For context, I recently stopped paying for the Adobe suite and prefer to avoid online freeware like https://www.adobe.com/express/feature/video/convert/video-to-gif
 
@@ -17,8 +18,8 @@ And used Olive to cut it to a 812 KB MP4 video
 
 And then used the GIF script to encode it into these three GIFs:
 
-| Resolution | Size  | Preview |
-|------------|-------|---------|
-| Low        | 97 KB | <img src="./gif/12c8488%20low.gif" alt="Low Resolution GIF" width="300"/> |
-| Mid        | 266 KB| <img src="./gif/12c8488%20mid.gif" alt="Mid Resolution GIF" width="300"/> |
-| High       | 445 KB| <img src="./gif/12c8488%20high.gif" alt="High Resolution GIF" width="300"/> |
+| Resolution | Size   | Preview                                                                     |
+| ---------- | ------ | --------------------------------------------------------------------------- |
+| Low        | 97 KB  | <img src="./gif/12c8488%20low.gif" alt="Low Resolution GIF" width="300"/>   |
+| Mid        | 266 KB | <img src="./gif/12c8488%20mid.gif" alt="Mid Resolution GIF" width="300"/>   |
+| High       | 445 KB | <img src="./gif/12c8488%20high.gif" alt="High Resolution GIF" width="300"/> |
