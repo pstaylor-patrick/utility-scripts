@@ -31,6 +31,28 @@ fi
 # Get the input file path
 input_file="$1"
 
+# Check if file is not an MP4, convert it first
+extension="${input_file##*.}"
+extension_lower=$(echo "$extension" | tr '[:upper:]' '[:lower:]')
+if [[ "$extension_lower" != "mp4" ]]; then
+    echo "Input is not an MP4. Converting first..."
+    script_dir="$(dirname "$0")"
+    "$script_dir/convert_half_24fps.sh" "$input_file"
+
+    # Determine the output filename from convert_half_24fps.sh
+    base="${input_file%.*}"
+    # Check which output was created (with or without -half suffix)
+    if [[ -f "${base}-24fps-half.mp4" ]]; then
+        input_file="${base}-24fps-half.mp4"
+    elif [[ -f "${base}-24fps.mp4" ]]; then
+        input_file="${base}-24fps.mp4"
+    else
+        echo "Error: Conversion failed, MP4 output not found."
+        exit 1
+    fi
+    echo "Using converted file: $input_file"
+fi
+
 # Set default resolution to all (renders low, mid, and high)
 resolution="all"
 
