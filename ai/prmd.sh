@@ -10,15 +10,24 @@ COMMAND_NAME="prmd"
 
 usage() {
     cat <<EOF
-Usage: $0 [-c] [-d] [-x] [--stat] <base-branch>
+Usage: $0 [-c] [-d] [-x] [--stat] [-t <name>] <base-branch>
 
 Options:
   -c, --claude              Use Claude Code CLI for AI operations.
   -d, --deepseek            Use DeepSeek API for AI operations.
   -x, --codex               Use OpenAI Codex for AI operations (default).
+  -t, --template <name>     Use a specific PR template from .github/PULL_REQUEST_TEMPLATE/<name>.md.
   --completion [bash|zsh]   Print shell completion script for ${COMMAND_NAME}.
   --stat                    Use git diff --stat summary only.
   -h, --help                Show this help message.
+
+Template Resolution:
+  Templates are searched in this order:
+    1. User-specified via -t <name> (e.g., -t release uses release.md)
+    2. .github/PULL_REQUEST_TEMPLATE/feature.md (default if multiple exist)
+    3. First .github/PULL_REQUEST_TEMPLATE/*.md alphabetically
+    4. .github/pull_request_template.md
+    5. Default template (~/.../ai/prmd/pull_request_template.md)
 EOF
 }
 
@@ -69,11 +78,28 @@ _${COMMAND_NAME}_complete() {
         return
     fi
 
+    if [[ "\$prev" == "-t" ]] || [[ "\$prev" == "--template" ]]; then
+        # Complete template names from .github/PULL_REQUEST_TEMPLATE/
+        local template_dir=".github/PULL_REQUEST_TEMPLATE"
+        if [ -d "\$template_dir" ]; then
+            local templates
+            templates=\$(find "\$template_dir" -maxdepth 1 -name "*.md" -type f 2>/dev/null | xargs -I{} basename {} .md | LC_ALL=C sort)
+            if [ -n "\$templates" ]; then
+                if type mapfile >/dev/null 2>&1; then
+                    mapfile -t COMPREPLY < <(compgen -W "\$templates" -- "\$cur")
+                else
+                    IFS=\$'\n' COMPREPLY=(\$(compgen -W "\$templates" -- "\$cur"))
+                fi
+            fi
+        fi
+        return
+    fi
+
     if [[ "\$cur" == --* ]]; then
         if type mapfile >/dev/null 2>&1; then
-            mapfile -t COMPREPLY < <(compgen -W "--stat --completion --help -h -c -d -x" -- "\$cur")
+            mapfile -t COMPREPLY < <(compgen -W "--stat --template --completion --help -h -c -d -x -t" -- "\$cur")
         else
-            IFS=\$'\n' COMPREPLY=(\$(compgen -W "--stat --completion --help -h -c -d -x" -- "\$cur"))
+            IFS=\$'\n' COMPREPLY=(\$(compgen -W "--stat --template --completion --help -h -c -d -x -t" -- "\$cur"))
         fi
         return
     fi
@@ -114,10 +140,20 @@ _${cmd}_branch_completions() {
         | LC_ALL=C sort -u
 }
 
+_${cmd}_template_completions() {
+    local template_dir=".github/PULL_REQUEST_TEMPLATE"
+    if [ -d "\$template_dir" ]; then
+        find "\$template_dir" -maxdepth 1 -name "*.md" -type f 2>/dev/null \\
+            | xargs -I{} basename {} .md \\
+            | LC_ALL=C sort
+    fi
+}
+
 _${cmd}_complete() {
     _arguments \\
         '(-h --help)'{-h,--help}'[show help]' \\
         '--stat[use git diff --stat summary]' \\
+        '(-t --template)'{-t,--template}'[use specific PR template]:template:_${cmd}_template_completions' \\
         '--completion[print shell completion script]:shell:(bash zsh)' \\
         '-c[use Claude Code]' \\
         '-d[use DeepSeek API]' \\
@@ -470,14 +506,100 @@ process_chunks_parallel() {
     log "Completed parallel processing of $total_chunks chunks"
 }
 
+# Get template from .github/PULL_REQUEST_TEMPLATE/ directory
+# Args: $1 = optional user-specified template name (without .md extension)
+# Returns: path to template file, or empty string if not found
+get_template_from_directory() {
+    local user_template="${1:-}"
+    local template_dir="./.github/PULL_REQUEST_TEMPLATE"
+
+    # Check if the directory exists
+    if [ ! -d "$template_dir" ]; then
+        return 1
+    fi
+
+    # If user specified a template name, look for it
+    if [ -n "$user_template" ]; then
+        local user_template_path="$template_dir/${user_template}.md"
+        if [ -f "$user_template_path" ]; then
+            echo "$user_template_path"
+            return 0
+        else
+            # User specified a template that doesn't exist - fatal error
+            echo "Error: Template '${user_template}' not found at ${user_template_path}" >&2
+            echo "" >&2
+            echo "Available templates in ${template_dir}:" >&2
+            local available_templates
+            available_templates=$(find "$template_dir" -maxdepth 1 -name "*.md" -type f 2>/dev/null | sort)
+            if [ -n "$available_templates" ]; then
+                echo "$available_templates" | while read -r tmpl; do
+                    local name
+                    name=$(basename "$tmpl" .md)
+                    echo "  - $name" >&2
+                done
+            else
+                echo "  (no templates found)" >&2
+            fi
+            return 2
+        fi
+    fi
+
+    # No user-specified template - check for feature.md first
+    local feature_template="$template_dir/feature.md"
+    if [ -f "$feature_template" ]; then
+        echo "$feature_template"
+        return 0
+    fi
+
+    # Fall back to first .md file alphabetically
+    local first_template
+    first_template=$(find "$template_dir" -maxdepth 1 -name "*.md" -type f 2>/dev/null | sort | head -n 1)
+    if [ -n "$first_template" ]; then
+        echo "$first_template"
+        return 0
+    fi
+
+    # No templates found in directory
+    return 1
+}
+
+# Get the PR template path with priority resolution
+# Args: $1 = optional user-specified template name
+# Returns: 0 on success with path echoed, 1 on error
 get_template_path() {
-    # Check if there's a .github/pull_request_template.md in the current directory
+    local user_template="${1:-}"
+
+    # Try to get template from .github/PULL_REQUEST_TEMPLATE/ directory
+    local dir_template
+    dir_template=$(get_template_from_directory "$user_template")
+    local result=$?
+
+    # If user specified a template that doesn't exist, return error
+    if [ $result -eq 2 ]; then
+        return 1
+    fi
+
+    # If we found a template in the directory, use it
+    if [ $result -eq 0 ] && [ -n "$dir_template" ]; then
+        echo "$dir_template"
+        return 0
+    fi
+
+    # If user specified a template but directory doesn't exist, that's also an error
+    if [ -n "$user_template" ]; then
+        echo "Error: Template directory .github/PULL_REQUEST_TEMPLATE/ not found." >&2
+        echo "Cannot use -t/--template flag without this directory." >&2
+        return 1
+    fi
+
+    # Fall back to single-file template
     local github_template="./.github/pull_request_template.md"
     if [ -f "$github_template" ]; then
         echo "$github_template"
     else
         echo "$DEFAULT_PULL_REQUEST_TEMPLATE"
     fi
+    return 0
 }
 
 get_diff_content() {
@@ -888,6 +1010,7 @@ EOF
 main() {
     local base_branch=""
     local use_stat="false"
+    local template_name=""
 
     while [[ "$#" -gt 0 ]]; do
         case "$1" in
@@ -901,6 +1024,15 @@ main() {
                 ;;
             --stat)
                 use_stat="true"
+                ;;
+            -t|--template)
+                if [ -z "${2:-}" ] || [[ "${2:-}" == -* ]]; then
+                    echo "Error: -t/--template requires a template name argument." >&2
+                    usage >&2
+                    exit 1
+                fi
+                template_name="$2"
+                shift
                 ;;
             -c|--claude)
                 ai_set_provider claude
@@ -953,8 +1085,13 @@ main() {
     log "Starting PR description generation against $base_branch..."
 
     # Determine which template to use
-    local template_path=$(get_template_path)
-    if [ "$template_path" = "./.github/pull_request_template.md" ]; then
+    local template_path
+    if ! template_path=$(get_template_path "$template_name"); then
+        exit 1
+    fi
+    if [[ "$template_path" == "./.github/PULL_REQUEST_TEMPLATE/"* ]]; then
+        log "Using template: $template_path"
+    elif [ "$template_path" = "./.github/pull_request_template.md" ]; then
         log "Using local .github/pull_request_template.md"
     else
         log "Using default pull request template"
