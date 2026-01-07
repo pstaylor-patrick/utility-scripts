@@ -13,6 +13,10 @@ detect_default_branch() {
   local has_main=false
   local has_dev=false
   local has_develop=false
+  local has_development=false
+  local has_staging=false
+  local has_production=false
+  local has_prod=false
 
   # Check for master branch
   if git show-ref --verify --quiet "refs/heads/master" || git show-ref --verify --quiet "refs/remotes/origin/master"; then
@@ -34,24 +38,52 @@ detect_default_branch() {
     has_develop=true
   fi
 
+  # Check for development branch
+  if git show-ref --verify --quiet "refs/heads/development" || git show-ref --verify --quiet "refs/remotes/origin/development"; then
+    has_development=true
+  fi
+
+  # Check for staging branch
+  if git show-ref --verify --quiet "refs/heads/staging" || git show-ref --verify --quiet "refs/remotes/origin/staging"; then
+    has_staging=true
+  fi
+
+  # Check for production branch
+  if git show-ref --verify --quiet "refs/heads/production" || git show-ref --verify --quiet "refs/remotes/origin/production"; then
+    has_production=true
+  fi
+
+  # Check for prod branch
+  if git show-ref --verify --quiet "refs/heads/prod" || git show-ref --verify --quiet "refs/remotes/origin/prod"; then
+    has_prod=true
+  fi
+
   # Handle error cases
   if [ "$has_master" = true ] && [ "$has_main" = true ]; then
     echo "Error: Repository has both 'master' and 'main' branches. Please resolve this ambiguity manually."
     exit 1
-  elif [ "$has_master" = false ] && [ "$has_main" = false ] && [ "$has_dev" = false ] && [ "$has_develop" = false ]; then
-    echo "Error: Repository has neither 'master', 'main', 'dev', nor 'develop' branch. Please ensure a default branch exists."
+  elif [ "$has_master" = false ] && [ "$has_main" = false ] && [ "$has_dev" = false ] && [ "$has_develop" = false ] && [ "$has_development" = false ] && [ "$has_staging" = false ] && [ "$has_production" = false ] && [ "$has_prod" = false ]; then
+    echo "Error: Repository has no recognized default branch (master, main, dev, develop, development, staging, production, prod). Please ensure a default branch exists."
     exit 1
   fi
 
-  # Return the appropriate default branch (priority: master > main > dev > develop)
+  # Return the appropriate default branch (priority: master > main > dev > develop > development > staging > production > prod)
   if [ "$has_master" = true ]; then
     echo "master"
   elif [ "$has_main" = true ]; then
     echo "main"
   elif [ "$has_dev" = true ]; then
     echo "dev"
-  else
+  elif [ "$has_develop" = true ]; then
     echo "develop"
+  elif [ "$has_development" = true ]; then
+    echo "development"
+  elif [ "$has_staging" = true ]; then
+    echo "staging"
+  elif [ "$has_production" = true ]; then
+    echo "production"
+  else
+    echo "prod"
   fi
 }
 
