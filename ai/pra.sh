@@ -14,8 +14,8 @@ Usage: $0 [-c] [-d] [-x] [--fix] <base-branch>
 
 Options:
   -c, --claude              Use Claude Code CLI for AI operations.
-  -d, --deepseek            Use DeepSeek API for AI operations.
-  -x, --codex               Use OpenAI Codex for AI operations (default).
+  -d, --deepseek            Use DeepSeek API for AI operations (default).
+  -x, --codex               Use OpenAI Codex for AI operations.
   --completion [bash|zsh]   Print shell completion script for ${command_name}.
   --fix                     After generating the report, ask AI to apply the recommended improvements and show git status.
 EOF

@@ -75,7 +75,7 @@ _ai_load_env() {
 _ai_load_env
 
 # Default provider
-AI_PROVIDER="${AI_PROVIDER:-codex}"
+AI_PROVIDER="${AI_PROVIDER:-deepseek}"
 
 # DeepSeek configuration
 DEEPSEEK_API_URL="${DEEPSEEK_API_URL:-https://api.deepseek.com/v1/chat/completions}"
@@ -262,9 +262,9 @@ ai_handle_getopts_provider() {
 ai_provider_usage() {
     cat <<'EOF'
 AI Provider Options:
-  -x, --codex      Use OpenAI Codex (default)
+  -d, --deepseek   Use DeepSeek API (default, requires DEEPSEEK_API_KEY)
+  -x, --codex      Use OpenAI Codex
   -c, --claude     Use Claude Code
-  -d, --deepseek   Use DeepSeek API (requires DEEPSEEK_API_KEY)
 
 Environment Variables:
   AI_PROVIDER      Set default provider (codex, claude, deepseek)

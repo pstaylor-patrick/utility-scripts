@@ -14,8 +14,8 @@ Usage: $0 [-c] [-d] [-x] [--stat] [-t <name>] <base-branch>
 
 Options:
   -c, --claude              Use Claude Code CLI for AI operations.
-  -d, --deepseek            Use DeepSeek API for AI operations.
-  -x, --codex               Use OpenAI Codex for AI operations (default).
+  -d, --deepseek            Use DeepSeek API for AI operations (default).
+  -x, --codex               Use OpenAI Codex for AI operations.
   -t, --template <name>     Use a specific PR template from .github/PULL_REQUEST_TEMPLATE/<name>.md.
   --completion [bash|zsh]   Print shell completion script for ${COMMAND_NAME}.
   --stat                    Use git diff --stat summary only.
