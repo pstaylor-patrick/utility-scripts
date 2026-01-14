@@ -16,18 +16,20 @@ Options:
   -c, --claude              Use Claude Code CLI for AI operations.
   -d, --deepseek            Use DeepSeek API for AI operations (default).
   -x, --codex               Use OpenAI Codex for AI operations.
-  -t, --template <name>     Use a specific PR template from .github/PULL_REQUEST_TEMPLATE/<name>.md.
+  -t, --template <name>     Use a specific PR template. Use 'ours' to ignore repo templates
+                            and use the default, or <name> for .github/PULL_REQUEST_TEMPLATE/<name>.md.
   --completion [bash|zsh]   Print shell completion script for ${COMMAND_NAME}.
   --stat                    Use git diff --stat summary only.
   -h, --help                Show this help message.
 
 Template Resolution:
   Templates are searched in this order:
-    1. User-specified via -t <name> (e.g., -t release uses release.md)
-    2. .github/PULL_REQUEST_TEMPLATE/feature.md (default if multiple exist)
-    3. First .github/PULL_REQUEST_TEMPLATE/*.md alphabetically
-    4. .github/pull_request_template.md
-    5. Default template (~/.../ai/prmd/pull_request_template.md)
+    1. User-specified 'ours' via -t ours (uses default, ignores repo templates)
+    2. User-specified via -t <name> (e.g., -t release uses release.md)
+    3. .github/PULL_REQUEST_TEMPLATE/feature.md (default if multiple exist)
+    4. First .github/PULL_REQUEST_TEMPLATE/*.md alphabetically
+    5. .github/pull_request_template.md
+    6. Default template (~/.../ai/prmd/pull_request_template.md)
 EOF
 }
 
@@ -79,18 +81,20 @@ _${COMMAND_NAME}_complete() {
     fi
 
     if [[ "\$prev" == "-t" ]] || [[ "\$prev" == "--template" ]]; then
-        # Complete template names from .github/PULL_REQUEST_TEMPLATE/
+        # Complete template names from .github/PULL_REQUEST_TEMPLATE/ plus 'ours'
         local template_dir=".github/PULL_REQUEST_TEMPLATE"
+        local templates="ours"
         if [ -d "\$template_dir" ]; then
-            local templates
-            templates=\$(find "\$template_dir" -maxdepth 1 -name "*.md" -type f 2>/dev/null | xargs -I{} basename {} .md | LC_ALL=C sort)
-            if [ -n "\$templates" ]; then
-                if type mapfile >/dev/null 2>&1; then
-                    mapfile -t COMPREPLY < <(compgen -W "\$templates" -- "\$cur")
-                else
-                    IFS=\$'\n' COMPREPLY=(\$(compgen -W "\$templates" -- "\$cur"))
-                fi
+            local dir_templates
+            dir_templates=\$(find "\$template_dir" -maxdepth 1 -name "*.md" -type f 2>/dev/null | xargs -I{} basename {} .md | LC_ALL=C sort)
+            if [ -n "\$dir_templates" ]; then
+                templates="\$templates \$dir_templates"
             fi
+        fi
+        if type mapfile >/dev/null 2>&1; then
+            mapfile -t COMPREPLY < <(compgen -W "\$templates" -- "\$cur")
+        else
+            IFS=\$'\n' COMPREPLY=(\$(compgen -W "\$templates" -- "\$cur"))
         fi
         return
     fi
@@ -141,6 +145,7 @@ _${cmd}_branch_completions() {
 }
 
 _${cmd}_template_completions() {
+    echo "ours"
     local template_dir=".github/PULL_REQUEST_TEMPLATE"
     if [ -d "\$template_dir" ]; then
         find "\$template_dir" -maxdepth 1 -name "*.md" -type f 2>/dev/null \\
@@ -568,6 +573,12 @@ get_template_from_directory() {
 # Returns: 0 on success with path echoed, 1 on error
 get_template_path() {
     local user_template="${1:-}"
+
+    # Special case: "ours" means use our default template, ignoring repo templates
+    if [ "$user_template" = "ours" ]; then
+        echo "$DEFAULT_PULL_REQUEST_TEMPLATE"
+        return 0
+    fi
 
     # Try to get template from .github/PULL_REQUEST_TEMPLATE/ directory
     local dir_template
