@@ -77,22 +77,22 @@ output_base=$(basename "$input_file" | sed 's/\.[^.]*$//')
 case "$resolution" in
     low)
         output_file="$output_dir/$output_base low.gif"
-        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos" -c:v gif "$output_file"
+        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos" -an -c:v gif "$output_file"
         ;;
     mid)
         output_file="$output_dir/$output_base mid.gif"
-        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" "$output_file"
+        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" -an "$output_file"
         ;;
     high)
         output_file="$output_dir/$output_base high.gif"
-        ffmpeg -y -i "$input_file" -vf "fps=15,scale=800:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" "$output_file"
+        ffmpeg -y -i "$input_file" -vf "fps=15,scale=800:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" -an "$output_file"
         ;;
     all)
         echo "Rendering low resolution..."
-        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos" -c:v gif "$output_dir/$output_base low.gif"
+        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos" -an -c:v gif "$output_dir/$output_base low.gif"
         echo "Rendering mid resolution..."
-        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" "$output_dir/$output_base mid.gif"
+        ffmpeg -y -i "$input_file" -vf "fps=10,scale=600:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" -an "$output_dir/$output_base mid.gif"
         echo "Rendering high resolution..."
-        ffmpeg -y -i "$input_file" -vf "fps=15,scale=800:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" "$output_dir/$output_base high.gif"
+        ffmpeg -y -i "$input_file" -vf "fps=15,scale=800:-1:flags=lanczos,split[s0][s1];[s1]palettegen[p];[s0][p]paletteuse" -an "$output_dir/$output_base high.gif"
         ;;
 esac
