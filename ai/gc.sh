@@ -298,14 +298,14 @@ process_entry() {
     fi
 
     log "Staging ($status) $display_path"
-    git add --all -- "${commit_paths[@]}"
+    git -c core.literalPathspecs=true add --all -- "${commit_paths[@]}"
 
     if [ "$single_commit" -eq 1 ]; then
         return 0
     fi
 
     local diff_output
-    diff_output=$(git diff --cached -- "${commit_paths[@]}")
+    diff_output=$(git -c core.literalPathspecs=true diff --cached -- "${commit_paths[@]}")
     if [ -z "$diff_output" ]; then
         log "No staged diff for $display_path; skipping."
         return 0
@@ -318,7 +318,7 @@ process_entry() {
     fi
 
     log "Committing $display_path with message: $commit_message"
-    git commit -m "$commit_message" -- "${commit_paths[@]}"
+    git -c core.literalPathspecs=true commit -m "$commit_message" -- "${commit_paths[@]}"
 }
 
 usage() {
