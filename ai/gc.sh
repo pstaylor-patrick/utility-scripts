@@ -16,6 +16,16 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >&2
 }
 
+# Strip surrounding double quotes from git porcelain paths (used for filenames with spaces)
+strip_quotes() {
+    local path="$1"
+    if [[ "$path" == \"*\" ]]; then
+        path="${path#\"}"  # Remove leading quote
+        path="${path%\"}"  # Remove trailing quote
+    fi
+    printf '%s' "$path"
+}
+
 require_cmd() {
     if ! command -v "$1" >/dev/null 2>&1; then
         echo "Error: $1 is required but not installed." >&2
@@ -229,6 +239,7 @@ format_entries_with_prettier() {
 run_prettier_for_entry() {
     local entry="$1"
     local raw_path="${entry:3}"
+    raw_path=$(strip_quotes "$raw_path")
     local paths=()
 
     if [[ "$raw_path" == *" -> "* ]]; then
@@ -271,6 +282,7 @@ process_entry() {
 
     local status="${entry:0:2}"
     local raw_path="${entry:3}"
+    raw_path=$(strip_quotes "$raw_path")
 
     # Handle rename/copy indicators that present as "old -> new"
     local commit_paths=()
