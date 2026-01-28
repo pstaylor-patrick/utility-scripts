@@ -328,12 +328,13 @@ process_entry() {
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [-1] [-c|-d|-x] [-h]
+Usage: $(basename "$0") [-1] [-f] [-c|-d|-x] [-h]
 
 Commit pending git changes with AI-generated commit messages.
 
 Options:
   -1            Stage and commit all changes in a single commit
+  -f            Fast mode: skip Prettier formatting (or set FORMAT=0)
   -h            Show this help message
 $(ai_provider_usage)
 EOF
@@ -341,11 +342,16 @@ EOF
 
 main() {
     local single_commit=0
+    local skip_prettier=0
+    [ "${FORMAT:-1}" = "0" ] && skip_prettier=1
 
-    while getopts ":1cdxh" opt; do
+    while getopts ":1fcdxh" opt; do
         case "$opt" in
             1)
                 single_commit=1
+                ;;
+            f)
+                skip_prettier=1
                 ;;
             c)
                 ai_set_provider claude
@@ -388,10 +394,14 @@ main() {
         exit 0
     fi
 
-    log "Running Prettier on pending files from initial status."
-    if ! format_entries_with_prettier <<< "$status_entries"; then
-        log "Prettier formatting failed; aborting."
-        exit 1
+    if [ "$skip_prettier" -eq 0 ]; then
+        log "Running Prettier on pending files from initial status."
+        if ! format_entries_with_prettier <<< "$status_entries"; then
+            log "Prettier formatting failed; aborting."
+            exit 1
+        fi
+    else
+        log "Skipping Prettier formatting (fast mode)."
     fi
 
     if [ "$single_commit" -eq 1 ]; then
