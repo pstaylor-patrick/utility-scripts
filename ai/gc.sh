@@ -279,6 +279,7 @@ run_prettier_for_entry() {
 process_entry() {
     local entry="$1"
     local single_commit="$2"
+    local skip_prettier="$3"
 
     local status="${entry:0:2}"
     local raw_path="${entry:3}"
@@ -323,7 +324,11 @@ process_entry() {
     fi
 
     log "Committing $display_path with message: $commit_message"
-    git -c core.literalPathspecs=true commit -m "$commit_message" -- "${commit_paths[@]}"
+    if [ "$skip_prettier" -eq 1 ]; then
+        HUSKY=0 git -c core.literalPathspecs=true commit -m "$commit_message" -- "${commit_paths[@]}"
+    else
+        git -c core.literalPathspecs=true commit -m "$commit_message" -- "${commit_paths[@]}"
+    fi
 }
 
 usage() {
@@ -334,7 +339,7 @@ Commit pending git changes with AI-generated commit messages.
 
 Options:
   -1            Stage and commit all changes in a single commit
-  -f            Fast mode: skip Prettier formatting (or set FORMAT=0)
+  -f            Fast mode: skip Prettier formatting and Husky hooks
   -h            Show this help message
 $(ai_provider_usage)
 EOF
@@ -412,7 +417,7 @@ main() {
     while IFS= read -r entry; do
         # Skip empty lines defensively
         [ -z "$entry" ] && continue
-        if ! process_entry "$entry" "$single_commit"; then
+        if ! process_entry "$entry" "$single_commit" "$skip_prettier"; then
             log "Encountered an error while processing: $entry"
         fi
     done <<< "$status_entries"
@@ -432,7 +437,11 @@ main() {
         fi
 
         log "Committing all staged changes with message: $commit_message"
-        git commit -m "$commit_message"
+        if [ "$skip_prettier" -eq 1 ]; then
+            HUSKY=0 git commit -m "$commit_message"
+        else
+            git commit -m "$commit_message"
+        fi
     fi
 
     log "Finished committing pending files."
