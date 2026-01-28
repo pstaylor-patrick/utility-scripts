@@ -298,7 +298,12 @@ process_entry() {
     fi
 
     log "Staging ($status) $display_path"
-    git -c core.literalPathspecs=true add --all -- "${commit_paths[@]}"
+    # Use git rm for deletions to avoid "could not open directory" warnings
+    if [[ "$status" == *D* ]]; then
+        git -c core.literalPathspecs=true rm --cached -- "${commit_paths[@]}"
+    else
+        git -c core.literalPathspecs=true add --all -- "${commit_paths[@]}"
+    fi
 
     if [ "$single_commit" -eq 1 ]; then
         return 0
