@@ -26,6 +26,31 @@ strip_quotes() {
     printf '%s' "$path"
 }
 
+load_skip_list() {
+    SKIP_PATTERNS=()
+    local gcignore
+    gcignore="$(git rev-parse --show-toplevel)/.gcignore"
+    [ -f "$gcignore" ] || return 0
+    while IFS= read -r line; do
+        [[ -z "$line" || "$line" == \#* ]] && continue
+        SKIP_PATTERNS+=("$line")
+    done < "$gcignore"
+    log "Loaded ${#SKIP_PATTERNS[@]} skip pattern(s) from .gcignore"
+}
+
+is_skipped() {
+    local path="$1"
+    [ ${#SKIP_PATTERNS[@]} -eq 0 ] && return 1
+    local basename="${path##*/}"
+    for pattern in "${SKIP_PATTERNS[@]}"; do
+        # Match against full path or basename
+        if [[ "$path" == $pattern || "$basename" == $pattern ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 require_cmd() {
     if ! command -v "$1" >/dev/null 2>&1; then
         echo "Error: $1 is required but not installed." >&2
@@ -232,6 +257,12 @@ format_entries_with_prettier() {
     local entry
     while IFS= read -r entry; do
         [ -z "$entry" ] && continue
+        local raw_path="${entry:3}"
+        raw_path=$(strip_quotes "$raw_path")
+        if is_skipped "$raw_path"; then
+            log "Skipping (gcignore) $raw_path"
+            continue
+        fi
         run_prettier_for_entry "$entry"
     done
 }
@@ -296,6 +327,11 @@ process_entry() {
     else
         commit_paths=("$raw_path")
         display_path="$raw_path"
+    fi
+
+    if is_skipped "$display_path"; then
+        log "Skipping (gcignore) $display_path"
+        return 0
     fi
 
     log "Staging ($status) $display_path"
@@ -385,6 +421,7 @@ main() {
     require_cmd npx
     ensure_git_repo
     enter_repo_root
+    load_skip_list
     maybe_clean_gc_log
 
     log "Using AI backend: $(ai_provider_name)"
