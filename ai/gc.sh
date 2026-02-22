@@ -331,6 +331,11 @@ process_entry() {
 
     if is_skipped "$display_path"; then
         log "Skipping (gcignore) $display_path"
+        # Restore tracked modified files to discard noise from auto-generated changes
+        if [[ "$status" == *M* || "$status" == *D* ]] && git ls-files --error-unmatch "$display_path" >/dev/null 2>&1; then
+            log "Restoring $display_path to clean working tree"
+            git checkout -- "$display_path" 2>/dev/null || true
+        fi
         return 0
     fi
 
