@@ -10,12 +10,13 @@ COMMAND_NAME="prmd"
 
 usage() {
     cat <<EOF
-Usage: $0 [-c] [-d] [-x] [--stat] [-t <name>] <base-branch>
+Usage: $0 [-c] [-d] [-x] [-f|-F] [--stat] [-t <name>] <base-branch>
 
 Options:
   -c, --claude              Use Claude Code CLI for AI operations.
   -d, --deepseek            Use DeepSeek API for AI operations (default).
   -x, --codex               Use OpenAI Codex for AI operations.
+  -f, -F, --fast            Skip the git-log refinement step (useful for single-commit changes).
   -t, --template <name>     Use a specific PR template. Use 'ours' to ignore repo templates
                             and use the default, or <name> for .github/PULL_REQUEST_TEMPLATE/<name>.md.
   --completion [bash|zsh]   Print shell completion script for ${COMMAND_NAME}.
@@ -101,9 +102,9 @@ _${COMMAND_NAME}_complete() {
 
     if [[ "\$cur" == --* ]]; then
         if type mapfile >/dev/null 2>&1; then
-            mapfile -t COMPREPLY < <(compgen -W "--stat --template --completion --help -h -c -d -x -t" -- "\$cur")
+            mapfile -t COMPREPLY < <(compgen -W "--stat --fast --template --completion --help -h -c -d -x -f -F -t" -- "\$cur")
         else
-            IFS=\$'\n' COMPREPLY=(\$(compgen -W "--stat --template --completion --help -h -c -d -x -t" -- "\$cur"))
+            IFS=\$'\n' COMPREPLY=(\$(compgen -W "--stat --fast --template --completion --help -h -c -d -x -f -F -t" -- "\$cur"))
         fi
         return
     fi
@@ -158,6 +159,7 @@ _${cmd}_complete() {
     _arguments \\
         '(-h --help)'{-h,--help}'[show help]' \\
         '--stat[use git diff --stat summary]' \\
+        '(-f -F --fast)'{-f,-F,--fast}'[skip git-log refinement]' \\
         '(-t --template)'{-t,--template}'[use specific PR template]:template:_${cmd}_template_completions' \\
         '--completion[print shell completion script]:shell:(bash zsh)' \\
         '-c[use Claude Code]' \\
@@ -1021,6 +1023,7 @@ EOF
 main() {
     local base_branch=""
     local use_stat="false"
+    local fast_mode="false"
     local template_name=""
 
     while [[ "$#" -gt 0 ]]; do
@@ -1035,6 +1038,9 @@ main() {
                 ;;
             --stat)
                 use_stat="true"
+                ;;
+            -f|-F|--fast)
+                fast_mode="true"
                 ;;
             -t|--template)
                 if [ -z "${2:-}" ] || [[ "${2:-}" == -* ]]; then
@@ -1120,7 +1126,11 @@ main() {
         fi
     fi
 
-    refine_pr_md_with_git_log "$base_branch"
+    if [ "$fast_mode" = "true" ]; then
+        log "Fast mode (-F): skipping git-log refinement step"
+    else
+        refine_pr_md_with_git_log "$base_branch"
+    fi
 }
 
 # Wrap main execution to ensure cleanup
