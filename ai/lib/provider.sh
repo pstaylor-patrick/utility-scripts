@@ -145,14 +145,15 @@ _ai_exec_claude() {
 
 _ai_exec_deepseek() {
     local prompt="$1"
-    local response
-    local content
 
     # Escape the prompt for JSON
     local escaped_prompt
     escaped_prompt=$(printf '%s' "$prompt" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
 
-    response=$(curl -s -X POST "$DEEPSEEK_API_URL" \
+    # Capture response body and HTTP status code separately
+    local http_code response tmpfile
+    tmpfile=$(mktemp)
+    http_code=$(curl -s -o "$tmpfile" -w '%{http_code}' -X POST "$DEEPSEEK_API_URL" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $DEEPSEEK_API_KEY" \
         -d "{
@@ -161,19 +162,43 @@ _ai_exec_deepseek() {
             \"temperature\": 0.7,
             \"max_tokens\": 4096
         }")
+    response=$(<"$tmpfile")
+    rm -f "$tmpfile"
 
-    # Check for API errors
-    local error
-    error=$(printf '%s' "$response" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("error",{}).get("message",""))' 2>/dev/null || true)
-    if [ -n "$error" ]; then
-        echo "DeepSeek API error: $error" >&2
+    if [ -z "$response" ]; then
+        echo "Error: Empty response from DeepSeek API (HTTP $http_code)" >&2
         return 1
     fi
 
-    # Extract content from response
-    content=$(printf '%s' "$response" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["choices"][0]["message"]["content"])' 2>/dev/null)
-    if [ -z "$content" ]; then
-        echo "Error: Failed to parse DeepSeek response" >&2
+    # Single python3 call handles error checking and content extraction
+    local content
+    content=$(printf '%s' "$response" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except (json.JSONDecodeError, ValueError) as e:
+    print(f"JSON parse error: {e}", file=sys.stderr)
+    sys.exit(1)
+if "error" in d:
+    e = d["error"]
+    msg = e.get("message", str(e)) if isinstance(e, dict) else str(e)
+    print(f"API error: {msg}", file=sys.stderr)
+    sys.exit(1)
+try:
+    c = d["choices"][0]["message"]["content"]
+except (KeyError, IndexError, TypeError) as e:
+    print(f"Unexpected response structure: {e}", file=sys.stderr)
+    sys.exit(1)
+if not c or not c.strip():
+    print("Empty content in response", file=sys.stderr)
+    sys.exit(1)
+print(c)
+')
+    local parse_exit=$?
+
+    if [ $parse_exit -ne 0 ] || [ -z "$content" ]; then
+        echo "Error: DeepSeek request failed (HTTP $http_code)" >&2
+        echo "Response preview: ${response:0:300}" >&2
         return 1
     fi
 
