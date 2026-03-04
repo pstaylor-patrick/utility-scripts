@@ -136,6 +136,15 @@ nuke_it() {
   git fetch
   git remote prune origin
 
+  # Remove all git worktrees before deleting branches
+  git_root=$(git rev-parse --show-toplevel)
+  git worktree list --porcelain | grep '^worktree ' | sed 's/^worktree //' | while read -r wt; do
+      if [ "$wt" != "$git_root" ]; then
+          git worktree remove --force "$wt" 2>/dev/null || true
+      fi
+  done
+  git worktree prune
+
   for branch in $(git branch --format='%(refname:short)'); do
     if [ "$branch" == "$temp_branch" ]; then
       continue
