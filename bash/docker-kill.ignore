@@ -1,0 +1,24 @@
+# docker-kill ignore list
+#
+# Resources matching these patterns are left untouched by docker-kill.sh.
+# Each non-empty, non-comment line is an extended regular expression (ERE)
+# matched against the resource name (or repository:tag for images).
+# Sections: [containers], [images], [volumes], [networks].
+# Override this file's path with the DOCKER_KILL_IGNORE_FILE env var.
+
+[containers]
+# Shared dockerized Caddy edge fronting local-dev hostnames.
+^dev-caddy$
+
+[images]
+# Keep the Caddy image the kept container runs on. It is digest-pinned, so its
+# local tag shows as <none>; match the repository rather than a tag.
+^caddy:
+
+[volumes]
+^dev-caddy_config$
+^dev-caddy_data$
+
+[networks]
+^cas360-edge$
+^dev-caddy_default$
