@@ -123,16 +123,19 @@ remove_networks() {
   remove_resources networks "$networks" docker network rm
 }
 
-count() {
-  "$@" | wc -l | tr -d ' '
+print_resource_table() {
+  local label="$1"
+  shift
+  echo "  $label:"
+  "$@" | sed 's/^/    /'
 }
 
 print_summary() {
   log "$1"
-  printf '  containers: %s\n' "$(count docker ps -a -q)"
-  printf '  images:     %s\n' "$(count docker images -q)"
-  printf '  volumes:    %s\n' "$(count docker volume ls -q)"
-  printf '  networks:   %s\n' "$(count docker network ls -q)"
+  print_resource_table containers docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+  print_resource_table images docker images --format 'table {{.Repository}}:{{.Tag}}\t{{.Size}}'
+  print_resource_table volumes docker volume ls --format 'table {{.Name}}\t{{.Driver}}'
+  print_resource_table networks docker network ls --format 'table {{.Name}}\t{{.Driver}}'
 }
 
 parse_ignore_file "$IGNORE_FILE"
