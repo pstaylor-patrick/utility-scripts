@@ -123,9 +123,26 @@ remove_networks() {
   remove_resources networks "$networks" docker network rm
 }
 
+print_resource_table() {
+  local label="$1"
+  shift
+  echo "  $label:"
+  "$@" | sed 's/^/    /'
+}
+
+print_summary() {
+  log "$1"
+  print_resource_table containers docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+  print_resource_table images docker images --format 'table {{.Repository}}:{{.Tag}}\t{{.Size}}'
+  print_resource_table volumes docker volume ls --format 'table {{.Name}}\t{{.Driver}}'
+  print_resource_table networks docker network ls --format 'table {{.Name}}\t{{.Driver}}'
+}
+
 parse_ignore_file "$IGNORE_FILE"
+print_summary "before:"
 remove_containers
 remove_images
 remove_volumes
 remove_networks
+print_summary "after:"
 log "done"
