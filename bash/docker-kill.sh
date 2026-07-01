@@ -123,9 +123,23 @@ remove_networks() {
   remove_resources networks "$networks" docker network rm
 }
 
+count() {
+  "$@" | wc -l | tr -d ' '
+}
+
+print_summary() {
+  log "$1"
+  printf '  containers: %s\n' "$(count docker ps -a -q)"
+  printf '  images:     %s\n' "$(count docker images -q)"
+  printf '  volumes:    %s\n' "$(count docker volume ls -q)"
+  printf '  networks:   %s\n' "$(count docker network ls -q)"
+}
+
 parse_ignore_file "$IGNORE_FILE"
+print_summary "before:"
 remove_containers
 remove_images
 remove_volumes
 remove_networks
+print_summary "after:"
 log "done"
