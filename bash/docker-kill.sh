@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
 #
 # Remove all docker containers, images, volumes, and custom networks, except
-# resources matched by the ignore file. The ignore file defaults to
-# docker-kill.ignore next to this script; override it with DOCKER_KILL_IGNORE_FILE.
-# See docker-kill.ignore for the format.
+# resources matched by the ignore file, then shut down the OrbStack daemon
+# itself so it releases the CPU/RAM it was holding. The ignore file defaults
+# to docker-kill.ignore next to this script; override it with
+# DOCKER_KILL_IGNORE_FILE. See docker-kill.ignore for the format.
+#
+# Killing OrbStack takes any whitelisted containers (e.g. the shared Caddy
+# edge) down too -- there is no "docker daemon" left to run them on. Restart
+# OrbStack to bring the daemon, and the whitelisted containers/networks,
+# back. Set DOCKER_KILL_SKIP_ORBSTACK=1 to leave OrbStack running.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IGNORE_FILE="${DOCKER_KILL_IGNORE_FILE:-$SCRIPT_DIR/docker-kill.ignore}"
+SKIP_ORBSTACK="${DOCKER_KILL_SKIP_ORBSTACK:-0}"
 
 log() {
   echo "[docker-kill] $*"
@@ -138,6 +145,40 @@ print_summary() {
   print_resource_table networks docker network ls --format 'table {{.Name}}\t{{.Driver}}'
 }
 
+# Stop the OrbStack app itself, not just the containers running on it. This
+# tears down its Linux VM and Docker daemon so the CPU/RAM/disk it was using
+# is actually released. Whitelisted containers/networks (e.g. the shared
+# Caddy edge) go down with it -- restarting OrbStack brings them back.
+kill_orbstack() {
+  if [ "$SKIP_ORBSTACK" = "1" ]; then
+    log "DOCKER_KILL_SKIP_ORBSTACK=1; leaving OrbStack running"
+    return 0
+  fi
+  if [ "$(uname -s)" != "Darwin" ]; then
+    log "not on macOS; skipping OrbStack shutdown"
+    return 0
+  fi
+  if ! pgrep -q -i -f orbstack; then
+    log "OrbStack is not running"
+    return 0
+  fi
+  if command -v orb >/dev/null 2>&1; then
+    log "stopping OrbStack via 'orb stop'"
+    orb stop >/dev/null 2>&1 || true
+    sleep 2
+  fi
+  if pgrep -q -i -f orbstack; then
+    log "OrbStack still running; force-killing its processes"
+    pkill -i -f orbstack || true
+    sleep 1
+  fi
+  if pgrep -q -i -f orbstack; then
+    log "warning: OrbStack processes still present after force-kill"
+  else
+    log "OrbStack stopped"
+  fi
+}
+
 parse_ignore_file "$IGNORE_FILE"
 print_summary "before:"
 remove_containers
@@ -145,4 +186,5 @@ remove_images
 remove_volumes
 remove_networks
 print_summary "after:"
+kill_orbstack
 log "done"
