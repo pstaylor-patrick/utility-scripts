@@ -11,8 +11,6 @@
 ^dev-caddy$
 # cove (servant): Postgres + app, compose project "cove".
 ^cove-(app|db)-[0-9]+$
-# money (personal-finance): compose project "personal-finance".
-^personal-finance-money-[0-9]+$
 
 [images]
 # Keep the Caddy image the kept container runs on. It is digest-pinned, so its
@@ -21,18 +19,14 @@
 # cove: app image is built locally; db uses pgvector.
 ^cove-app:
 ^pgvector/pgvector:
-# money: image built locally as money:dev.
-^money:dev$
 
 [volumes]
 ^dev-caddy_config$
 ^dev-caddy_data$
 # cove Postgres data. Compose prefixes the project name, so the real volume is
-# cove_cove-pgdata, not cove-pgdata. money uses a host bind mount, no volume.
+# cove_cove-pgdata, not cove-pgdata.
 ^cove_cove-pgdata$
 
 [networks]
-^cas360-edge$
 ^dev-caddy_default$
 ^cove_default$
-^personal-finance_default$
