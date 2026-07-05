@@ -158,7 +158,12 @@ kill_orbstack() {
     log "not on macOS; skipping OrbStack shutdown"
     return 0
   fi
-  if ! pgrep -q -i -f orbstack; then
+  # Scope to our own processes: the root-owned dev.orbstack.OrbStack.privhelper
+  # LaunchDaemon also matches "orbstack" but is a persistent system helper we
+  # can't signal and don't need to -- it holds no VM/CPU/RAM of its own.
+  local user_id
+  user_id="$(id -u)"
+  if ! pgrep -q -i -f -u "$user_id" orbstack; then
     log "OrbStack is not running"
     return 0
   fi
@@ -167,12 +172,12 @@ kill_orbstack() {
     orb stop >/dev/null 2>&1 || true
     sleep 2
   fi
-  if pgrep -q -i -f orbstack; then
+  if pgrep -q -i -f -u "$user_id" orbstack; then
     log "OrbStack still running; force-killing its processes"
-    pkill -i -f orbstack || true
+    pkill -i -f -u "$user_id" orbstack || true
     sleep 1
   fi
-  if pgrep -q -i -f orbstack; then
+  if pgrep -q -i -f -u "$user_id" orbstack; then
     log "warning: OrbStack processes still present after force-kill"
   else
     log "OrbStack stopped"
