@@ -9,7 +9,7 @@
 [containers]
 # Shared dockerized Caddy edge fronting local-dev hostnames.
 ^dev-caddy$
-# cove (servant): Postgres + app, compose project "cove".
+# cove: Postgres + app, compose project "cove".
 ^cove-(app|db)-[0-9]+$
 
 [images]
@@ -28,5 +28,11 @@
 ^cove_cove-pgdata$
 
 [networks]
-^dev-caddy_default$
 ^cove_default$
+# journey-to-jericho: external edge network joining the shared dev-caddy.
+# Certs live in dev-caddy_data; this net has no state of its own, kept only so
+# the stack can rejoin dev-caddy without recreating it.
+^j2j-edge$
+# league-os: external edge network joining the shared dev-caddy. Same reasoning
+# as j2j-edge above.
+^leagueos-edge$
