@@ -11,6 +11,11 @@
 ^dev-caddy$
 # cove: Postgres + app, compose project "cove".
 ^cove-(app|db)-[0-9]+$
+# money: Postgres holds pulled YNAB data, must survive the nightly wipe.
+^money-postgres$
+# money: Rails app container. No explicit container_name yet; compose will
+# name it money-web-1 (project-prefixed, numbered) until one is set.
+^money-web(-[0-9]+)?$
 
 [images]
 # Keep the Caddy image the kept container runs on. It is digest-pinned, so its
@@ -19,13 +24,23 @@
 # cove: app image is built locally; db uses pgvector.
 ^cove-app:
 ^pgvector/pgvector:
+# money: Postgres image, plus the locally built Rails image once tagged.
+^postgres:17
+^money(-web)?:
 
 [volumes]
 ^dev-caddy_config$
 ^dev-caddy_data$
+# 5ll-coaching: local Supabase Postgres + Storage data, seeded from a
+# coaching-prod pull. Expensive to re-restore; keep across kills.
+^supabase_db_5ll-coaching$
+^supabase_storage_5ll-coaching$
 # cove Postgres data. Compose prefixes the project name, so the real volume is
 # cove_cove-pgdata, not cove-pgdata.
 ^cove_cove-pgdata$
+# money Postgres data, holds pulled YNAB data. Same project-prefix reasoning
+# as cove_cove-pgdata: money_money-pgdata, not money-pgdata.
+^money_money-pgdata$
 
 [networks]
 ^cove_default$
@@ -36,3 +51,6 @@
 # league-os: external edge network joining the shared dev-caddy. Same reasoning
 # as j2j-edge above.
 ^leagueos-edge$
+# money: external edge network joining the shared dev-caddy. Same reasoning
+# as j2j-edge above.
+^money-edge$
