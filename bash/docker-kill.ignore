@@ -9,6 +9,8 @@
 [containers]
 # Shared dockerized Caddy edge fronting local-dev hostnames.
 ^dev-caddy$
+# syncthing: file sync daemon, must stay up continuously.
+^syncthing$
 # cove: Postgres + app, compose project "cove".
 ^cove-(app|db)-[0-9]+$
 # money: Postgres holds pulled YNAB data, must survive the nightly wipe.
@@ -21,6 +23,8 @@
 # Keep the Caddy image the kept container runs on. It is digest-pinned, so its
 # local tag shows as <none>; match the repository rather than a tag.
 ^caddy:
+# syncthing: keep the image so the kept container survives a kill run.
+^lscr\.io/linuxserver/syncthing:
 # cove: app image is built locally; db uses pgvector.
 ^cove-app:
 ^pgvector/pgvector:
@@ -44,6 +48,7 @@
 
 [networks]
 ^cove_default$
+^syncthing_default$
 # journey-to-jericho: external edge network joining the shared dev-caddy.
 # Certs live in dev-caddy_data; this net has no state of its own, kept only so
 # the stack can rejoin dev-caddy without recreating it.
