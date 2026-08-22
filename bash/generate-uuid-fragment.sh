@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 
-get_uuid_tail() {
-  uuidgen | awk -F '-' '{print $NF}'
-}
-
-UUID_TAIL=$(get_uuid_tail)
+UUID_TAIL=$(uuidgen | awk -F '-' '{print $NF}')
 
 copy_to_clipboard() {
   local input
@@ -20,6 +16,10 @@ copy_to_clipboard() {
       esac
     fi
   done
+
+  if [[ -n "$SSH_TTY" ]] && [[ -w "$SSH_TTY" ]]; then
+    printf '\033]52;c;%s\a' "$(printf '%s' "$input" | base64 | tr -d '\n')" > "$SSH_TTY" && return 0
+  fi
 
   echo "Warning: could not copy to clipboard (no working clipboard tool found)." >&2
   return 1
