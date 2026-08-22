@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-UUID_TAIL=$(uuidgen | awk -F '-' '{print $NF}')
+UUID_TAIL=$(uuidgen | awk -F '-' '{print $NF}' | tr '[:lower:]' '[:upper:]')
 
 copy_to_clipboard() {
   local input
