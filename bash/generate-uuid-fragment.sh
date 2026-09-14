@@ -17,8 +17,15 @@ copy_to_clipboard() {
     fi
   done
 
-  if [[ -n "$SSH_TTY" ]] && [[ -w "$SSH_TTY" ]]; then
-    printf '\033]52;c;%s\a' "$(printf '%s' "$input" | base64 | tr -d '\n')" > "$SSH_TTY" && return 0
+  local sink
+  for sink in /dev/tty "$SSH_TTY"; do
+    if [[ -n "$sink" ]] && [[ -w "$sink" ]]; then
+      printf '\033]52;c;%s\a' "$(printf '%s' "$input" | base64 | tr -d '\n')" > "$sink" && return 0
+    fi
+  done
+
+  if [[ -t 2 ]]; then
+    printf '\033]52;c;%s\a' "$(printf '%s' "$input" | base64 | tr -d '\n')" >&2 && return 0
   fi
 
   echo "Warning: could not copy to clipboard (no working clipboard tool found)." >&2
