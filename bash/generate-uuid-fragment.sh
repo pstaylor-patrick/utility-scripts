@@ -1,36 +1,9 @@
 #!/usr/bin/env bash
 
+# shellcheck source=lib/clipboard.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/clipboard.sh"
+
 UUID_TAIL=$(uuidgen | awk -F '-' '{print $NF}' | tr '[:lower:]' '[:upper:]')
-
-copy_to_clipboard() {
-  local input
-  input=$(cat)
-
-  local tool
-  for tool in pbcopy wl-copy xclip xsel clip.exe; do
-    if command -v "$tool" >/dev/null 2>&1; then
-      case "$tool" in
-        xclip) printf '%s' "$input" | xclip -selection clipboard 2>/dev/null && return 0 ;;
-        xsel) printf '%s' "$input" | xsel --clipboard --input 2>/dev/null && return 0 ;;
-        *) printf '%s' "$input" | "$tool" && return 0 ;;
-      esac
-    fi
-  done
-
-  local sink
-  for sink in /dev/tty "$SSH_TTY"; do
-    if [[ -n "$sink" ]] && [[ -w "$sink" ]]; then
-      printf '\033]52;c;%s\a' "$(printf '%s' "$input" | base64 | tr -d '\n')" > "$sink" && return 0
-    fi
-  done
-
-  if [[ -t 2 ]]; then
-    printf '\033]52;c;%s\a' "$(printf '%s' "$input" | base64 | tr -d '\n')" >&2 && return 0
-  fi
-
-  echo "Warning: could not copy to clipboard (no working clipboard tool found)." >&2
-  return 1
-}
 
 echo "$UUID_TAIL"
 echo -n "$UUID_TAIL" | copy_to_clipboard
